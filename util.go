@@ -32,14 +32,15 @@ func EnsureNumbers(in string) string {
 		log.Errorf("An unrecoverable error occurred when compiling a regex expression: %s", err)
 		return ""
 	}
-
-	str, err := reg.Replace(in, "", 0, 0)
-
-	if err != nil {
-		log.Errorf("Unable to replace text in EnsureNumbers")
-		return ""
+	if ok, _ := reg.MatchString(in); ok {
+		str, err := reg.Replace(in, "", -1, -1)
+		if err != nil {
+			log.Errorf("Unable to replace text in EnsureNumbers")
+			return ""
+		}
+		return str
 	}
-	return str
+	return ""
 }
 
 // EnsureLetters
