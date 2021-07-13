@@ -1,0 +1,3 @@
+[submodule "discordgo"]
+	path = discordgo
+	url = git@github.com:QPixel/discordgo
