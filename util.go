@@ -40,7 +40,7 @@ func EnsureNumbers(in string) string {
 		}
 		return str
 	}
-	return ""
+	return in
 }
 
 // EnsureLetters
@@ -53,13 +53,15 @@ func EnsureLetters(in string) string {
 		return ""
 	}
 
-	str, err := reg.Replace(in, "", 0, 0)
-
-	if err != nil {
-		log.Errorf("Unable to replace text in EnsureLetters")
-		return ""
+	if ok, _ := reg.MatchString(in); ok {
+		str, err := reg.Replace(in, "", -1, -1)
+		if err != nil {
+			log.Errorf("Unable to replace text in EnsureLetters")
+			return ""
+		}
+		return str
 	}
-	return str
+	return in
 }
 
 // CleanId
