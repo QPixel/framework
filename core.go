@@ -33,6 +33,9 @@ var Session *discordgo.Session
 // This is a boolean map, because checking its values is dead simple this way
 var botAdmins = make(map[string]bool)
 
+// BotPresence
+var botPresence discordgo.GatewayStatusUpdate
+
 // BotToken
 // A string of the current bot token, usually set by the main method
 // Similar to BotAdmins, this isn't saved to .json and is added programmatically
@@ -74,7 +77,14 @@ func IsCommand(trigger string) bool {
 	return false
 }
 
-// Start uberbot!
+// SetPresence
+// Sets the presence struct after a session has been created
+func SetPresence(presence discordgo.GatewayStatusUpdate) {
+	botPresence = presence
+	return
+}
+
+// Start the bot!
 func Start() {
 	// Load all the guilds
 	loadGuilds()
@@ -94,7 +104,7 @@ func Start() {
 	// Setup State specific variables
 	Session.State.MaxMessageCount = messageState
 	Session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
-
+	Session.Identify.Presence = botPresence
 	// Open the session
 	log.Info("Connecting to Discord...")
 	err = Session.Open()
