@@ -1,7 +1,6 @@
 package framework
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -93,73 +92,6 @@ func NewResponse(ctx *Context, messageComponents bool, ephemeral bool) *Response
 		}
 
 	}
-	// If the command context is not empty, append the command
-	if ctx.Cmd.Trigger != "" {
-		// Get the command used as a string, and all interpreted arguments, so it can be a part of the output
-		commandUsed := ""
-		if r.Ctx.Cmd.IsChild {
-			commandUsed = fmt.Sprintf("%s%s %s", r.Ctx.Guild.Info.Prefix, r.Ctx.Cmd.ParentID, r.Ctx.Cmd.Trigger)
-		} else {
-			commandUsed = r.Ctx.Guild.Info.Prefix + r.Ctx.Cmd.Trigger
-		}
-		// Just makes the thing prettier
-		if ctx.Interaction != nil {
-			commandUsed = "/" + r.Ctx.Cmd.Trigger
-		}
-		for _, k := range r.Ctx.Cmd.Arguments.Keys() {
-			arg := ctx.Args[k]
-			if arg.StringValue() == "" {
-				continue
-			}
-			vv, ok := r.Ctx.Cmd.Arguments.Get(k)
-
-			if ok {
-				argInfo := vv.(*ArgInfo)
-				switch argInfo.TypeGuard {
-				case Int:
-					fallthrough
-				case Boolean:
-					fallthrough
-				case String:
-					commandUsed += " " + arg.StringValue()
-					break
-				case User:
-					user, err := arg.UserValue(Session)
-					if err != nil {
-						commandUsed += " " + arg.StringValue()
-					} else {
-						commandUsed += " " + user.Mention()
-					}
-				case Role:
-					role, err := arg.RoleValue(Session, r.Ctx.Guild.ID)
-					if err != nil {
-						commandUsed += " " + arg.StringValue()
-					} else {
-						commandUsed += " " + role.Mention()
-					}
-				case Channel:
-					channel, err := arg.ChannelValue(Session)
-					if err != nil {
-						commandUsed += " " + arg.StringValue()
-					} else {
-						commandUsed += " " + channel.Mention()
-					}
-				}
-			} else {
-				commandUsed += " " + arg.StringValue()
-			}
-		}
-
-		commandUsed = "```\n" + commandUsed + "\n```"
-
-		r.AppendField("Command used:", commandUsed, false)
-	}
-
-	// If the message is not nil, append an invoker
-	if ctx.Message != nil {
-		r.AppendField("Invoked by:", r.Ctx.Message.Author.Mention(), false)
-	}
-
 	return r
 }
 
