@@ -255,6 +255,13 @@ func (g *Guild) SetPrefix(newPrefix string) {
 	g.save()
 }
 
+// SetLang
+// Set the prefix, then save the guild data
+func (g *Guild) SetLang(lang string) {
+	g.Info.GuildLanguage = lang
+	g.save()
+}
+
 // IsMod
 // Check if a given ID is a moderator or not
 func (g *Guild) IsMod(checkId string) bool {
