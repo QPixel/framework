@@ -15,7 +15,8 @@ import (
 
 // GuildsDir
 // The directory to use for reading and writing guild .json files. Defaults to ./guilds
-var GuildsDir = "./guilds"
+// todo remind me to abstract this into a database
+var GuildsDir = ""
 
 // saveLock
 // A map that stores mutexes for each guild, which will be locked every time that guild's data is written
