@@ -17,6 +17,7 @@ import (
 type GuildInfo struct {
 	AddedDate                  int64                    `json:"addedDate"`                     // The date the bot was added to the server
 	Prefix                     string                   `json:"prefix"`                        // The bot prefix
+	GuildLanguage              string                   `json:"guildLanguage"`                 // The guilds language
 	ModeratorIds               []string                 `json:"moderatorIds"`                  // The list of user/role IDs allowed to run mod-only commands
 	WhitelistIds               []string                 `json:"whitelistIds"`                  // List of user/role Ids that a user MUST have one of in order to run any commands, including public ones
 	IgnoredIds                 []string                 `json:"ignoredIds"`                    // List of user/role IDs that can never run commands, even public ones
@@ -66,6 +67,7 @@ func getGuild(guildId string) *Guild {
 			ID: guildId,
 			Info: GuildInfo{
 				AddedDate:                  time.Now().Unix(),
+				GuildLanguage:              "en",
 				Prefix:                     "!",
 				DeletePolicy:               false,
 				ResponseChannelId:          "",
