@@ -1,4 +1,4 @@
-package core
+package framework
 
 import (
 	"github.com/bwmarrin/discordgo"
@@ -137,19 +137,7 @@ func Start() {
 
 	// Bot ready
 	log.Info("Initialization complete! The bot is now ready.")
-	// Set the bots status
-	var timeSinceIdle = 91879201
-	Session.UpdateStatusComplex(discordgo.UpdateStatusData{
-		Activities: []*discordgo.Activity{
-			{
-				Name: "Mega Man Battle Network",
-				Type: 0,
-			},
-		},
-		Status:    "dnd",
-		AFK:       true,
-		IdleSince: &timeSinceIdle,
-	})
+
 	// Info about slash commands
 	log.Info(<-slashChannel)
 	// -- GRACEFUL TERMINATION -- //

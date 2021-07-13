@@ -1,4 +1,4 @@
-package core
+package framework
 
 // handlers.go
 // Everything required for commands to pass their own handlers to discordgo

@@ -1,9 +1,9 @@
-package core
+package framework
 
 import (
 	"errors"
 	"github.com/bwmarrin/discordgo"
-	"regexp"
+	"github.com/dlclark/regexp2"
 	"strconv"
 	"strings"
 )
@@ -27,26 +27,38 @@ func RemoveItem(slice []string, delete string) []string {
 // Given a string, ensure it contains only numbers
 // This is useful for stripping letters and formatting characters from user/role pings
 func EnsureNumbers(in string) string {
-	reg, err := regexp.Compile("[^0-9]+")
+	reg, err := regexp2.Compile("[^0-9]+", 0)
 	if err != nil {
 		log.Errorf("An unrecoverable error occurred when compiling a regex expression: %s", err)
 		return ""
 	}
 
-	return reg.ReplaceAllString(in, "")
+	str, err := reg.Replace(in, "", 0, 0)
+
+	if err != nil {
+		log.Errorf("Unable to replace text in EnsureNumbers")
+		return ""
+	}
+	return str
 }
 
 // EnsureLetters
 // Given a string, ensure it contains only letters
 // This is useful for stripping numbers from mute durations, and possibly other things
 func EnsureLetters(in string) string {
-	reg, err := regexp.Compile("[^a-zA-Z]+")
+	reg, err := regexp2.Compile("[^a-zA-Z]+", 0)
 	if err != nil {
 		log.Errorf("An unrecoverable error occurred when compiling a regex expression: %s", err)
 		return ""
 	}
 
-	return reg.ReplaceAllString(in, "")
+	str, err := reg.Replace(in, "", 0, 0)
+
+	if err != nil {
+		log.Errorf("Unable to replace text in EnsureLetters")
+		return ""
+	}
+	return str
 }
 
 // CleanId
