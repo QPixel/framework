@@ -140,8 +140,15 @@ func ExtractCommand(guild *GuildInfo, message string) (*string, *string) {
 			if content == "" {
 				return nil, nil
 			}
-			trigger := strings.ToLower(strings.Fields(content)[0])
+			// Attempt to pull the trigger out of the command content by splitting on spaces
+			trigger := strings.Fields(content)[0]
+
+			// With the trigger identified, split the command content on the trigger to obtain everything BUT the trigger
+			// Ensure only 2 fields are returned so it can be split further. Then, get only the second field
 			fullArgs := strings.SplitN(content, trigger, 2)[1]
+			fullArgs = strings.TrimPrefix(fullArgs, " ")
+			// Avoids issues with strings that are case sensitive
+			trigger = strings.ToLower(trigger)
 			return &trigger, &fullArgs
 		} else {
 			return nil, nil
