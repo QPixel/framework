@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// util.go
+// language.go
 // This file contains utility functions, simplifying redundant tasks
 
 // RemoveItem
