@@ -3,12 +3,12 @@ package framework
 import (
 	"errors"
 	"github.com/bwmarrin/discordgo"
-	"github.com/dlclark/regexp2"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-// language.go
+// util.go
 // This file contains utility functions, simplifying redundant tasks
 
 // RemoveItem
@@ -23,45 +23,43 @@ func RemoveItem(slice []string, delete string) []string {
 	return newSlice
 }
 
+// RemoveItems
+// Removes items from a slice by index
+func RemoveItems(slice []string, indexes []int) []string {
+	newSlice := make([]string, len(slice))
+	copy(newSlice, slice)
+	for _, v := range indexes {
+		newSlice[v] = newSlice[len(newSlice)-1]
+		newSlice[len(newSlice)-1] = ""
+		newSlice = newSlice[:len(newSlice)-1]
+	}
+	return newSlice
+}
+
 // EnsureNumbers
 // Given a string, ensure it contains only numbers
 // This is useful for stripping letters and formatting characters from user/role pings
 func EnsureNumbers(in string) string {
-	reg, err := regexp2.Compile("[^0-9]+", 0)
+	reg, err := regexp.Compile("[^0-9]+")
 	if err != nil {
 		log.Errorf("An unrecoverable error occurred when compiling a regex expression: %s", err)
 		return ""
 	}
-	if ok, _ := reg.MatchString(in); ok {
-		str, err := reg.Replace(in, "", -1, -1)
-		if err != nil {
-			log.Errorf("Unable to replace text in EnsureNumbers")
-			return ""
-		}
-		return str
-	}
-	return in
+
+	return reg.ReplaceAllString(in, "")
 }
 
 // EnsureLetters
 // Given a string, ensure it contains only letters
 // This is useful for stripping numbers from mute durations, and possibly other things
 func EnsureLetters(in string) string {
-	reg, err := regexp2.Compile("[^a-zA-Z]+", 0)
+	reg, err := regexp.Compile("[^a-zA-Z]+")
 	if err != nil {
 		log.Errorf("An unrecoverable error occurred when compiling a regex expression: %s", err)
 		return ""
 	}
 
-	if ok, _ := reg.MatchString(in); ok {
-		str, err := reg.Replace(in, "", -1, -1)
-		if err != nil {
-			log.Errorf("Unable to replace text in EnsureLetters")
-			return ""
-		}
-		return str
-	}
-	return in
+	return reg.ReplaceAllString(in, "")
 }
 
 // CleanId
@@ -140,15 +138,8 @@ func ExtractCommand(guild *GuildInfo, message string) (*string, *string) {
 			if content == "" {
 				return nil, nil
 			}
-			// Attempt to pull the trigger out of the command content by splitting on spaces
-			trigger := strings.Fields(content)[0]
-
-			// With the trigger identified, split the command content on the trigger to obtain everything BUT the trigger
-			// Ensure only 2 fields are returned so it can be split further. Then, get only the second field
+			trigger := strings.ToLower(strings.Fields(content)[0])
 			fullArgs := strings.SplitN(content, trigger, 2)[1]
-			fullArgs = strings.TrimPrefix(fullArgs, " ")
-			// Avoids issues with strings that are case sensitive
-			trigger = strings.ToLower(trigger)
 			return &trigger, &fullArgs
 		} else {
 			return nil, nil
@@ -190,7 +181,7 @@ func SendErrorReport(guildId string, channelId string, userId string, title stri
 	log.Errorf("[REPORT] %s (%s)", title, err)
 
 	// Iterate through all the admins
-	for admin, _ := range botAdmins {
+	for admin := range botAdmins {
 
 		// Get the channel ID of the user to DM
 		dmChannel, dmCreateErr := Session.UserChannelCreate(admin)

@@ -20,5 +20,11 @@ var (
 		"channel": regexp2.MustCompile("<((#?\\d+))>", 0),
 		"id":      regexp2.MustCompile("^[0-9]{18}$", 0),
 	}
-	TypeGuard = regex{}
+	TypeGuard = regex{
+		"message_url": regexp2.MustCompile("((https:\\/\\/canary.discord.com\\/channels\\/)+([0-9]{18})\\/+([0-9]{18})\\/+([0-9]{18})$)", regexp2.IgnoreCase|regexp2.Multiline),
+	}
+	Misc = regex{
+		"quoted_string": regexp2.MustCompile("^\"[a-zA-Z0-9]+\"$", 0),
+		"int":           regexp2.MustCompile("\\b(0*(?:[0-9]{1,8}))\\b", 0),
+	}
 )

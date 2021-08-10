@@ -1,20 +1,16 @@
 package framework
 
 import (
+	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"runtime"
 )
 
-//
-//// TODO clean up this file and move interaction specific functions here
-//
-//import (
-//	"github.com/bwmarrin/discordgo"
-//	"strings"
-//)
-//
-//// slashCommandTypes
-//// A map of *short hand* slash commands types to their discordgo counterparts
-//// TODO move this over to interaction.go
+// -- Types and Structs --
+
+// slashCommandTypes
+// A map of *short hand* slash commands types to their discordgo counterparts
+// TODO move this over to interaction.go
 var slashCommandTypes = map[ArgTypeGuards]discordgo.ApplicationCommandOptionType{
 	Int:     discordgo.ApplicationCommandOptionInteger,
 	String:  discordgo.ApplicationCommandOptionString,
@@ -25,6 +21,8 @@ var slashCommandTypes = map[ArgTypeGuards]discordgo.ApplicationCommandOptionType
 	//SubCmd:    discordgo.ApplicationCommandOptionSubCommand,
 	//SubCmdGrp: discordgo.ApplicationCommandOptionSubCommandGroup,
 }
+
+//var componentHandlers
 
 //
 // getSlashCommandStruct
@@ -66,6 +64,29 @@ func createSlashCommandStruct(info *CommandInfo) (st *discordgo.ApplicationComma
 	return
 }
 
+// Creates a slash subcmd struct
+func createSlashSubCmdStruct(info *CommandInfo, childCmds map[string]Command) (st *discordgo.ApplicationCommand) {
+	st = &discordgo.ApplicationCommand{
+		Name:        info.Trigger,
+		Description: info.Description,
+		Options:     make([]*discordgo.ApplicationCommandOption, len(childCmds)),
+	}
+	currentPos := 0
+	for _, v := range childCmds {
+		// Stupid inline thing
+		if ar, _ := v.Info.Arguments.Get(v.Info.Arguments.Keys()[0]); ar.(*ArgInfo).TypeGuard == SubCmdGrp {
+
+		} else {
+			//Pixel:
+			//Yes I know this is O(N^2). Most likely I could get something better
+			//todo: refactor so this isn't as bad for performance
+			st.Options[currentPos] = v.Info.CreateAppOptSt()
+			currentPos++
+		}
+	}
+	return st
+}
+
 // -- Interaction Handlers --
 
 // handleInteraction
@@ -84,6 +105,39 @@ func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 // handleInteractionCommand
 // Handles a slash command
 func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.ApplicationCommandData().Name == "rickroll-em" {
+		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "Operation rickroll has begun",
+				Flags:   1 << 6,
+			},
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		ch, err := s.UserChannelCreate(
+			i.ApplicationCommandData().TargetID,
+		)
+		if err != nil {
+			_, err = s.FollowupMessageCreate(Session.State.User.ID, i.Interaction, true, &discordgo.WebhookParams{
+				Content: fmt.Sprintf("Mission failed. Cannot send a message to this user: %q", err.Error()),
+				Flags:   1 << 6,
+			})
+			if err != nil {
+				panic(err)
+			}
+		}
+		_, err = s.ChannelMessageSend(
+			ch.ID,
+			fmt.Sprintf("%s sent you this: https://youtu.be/dQw4w9WgXcQ", i.Member.Mention()),
+		)
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
 	g := getGuild(i.GuildID)
 
 	if g.Info.DeletePolicy {
@@ -121,6 +175,7 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 	if IsAdmin(i.Member.User.ID) || command.Info.Public || g.IsMod(i.Member.User.ID) {
 		// Check if the command is public, or if the current user is a bot moderator
 		// Bot admins supercede both checks
+		defer handleSlashCommandError(*i.Interaction)
 		command.Function(&Context{
 			Guild:       g,
 			Cmd:         command.Info,
@@ -203,4 +258,28 @@ func RemoveGuildSlashCommands(guildID string) {
 			continue
 		}
 	}
+}
+
+func handleSlashCommandError(i discordgo.Interaction) {
+	if r := recover(); r != nil {
+		log.Warningf("Recovering from panic: %s", r)
+		log.Warningf("Sending Error report to admins")
+		SendErrorReport(i.GuildID, i.ChannelID, i.Member.User.ID, "Error!", r.(runtime.Error))
+		message, err := Session.InteractionResponseEdit(Session.State.User.ID, &i, &discordgo.WebhookEdit{
+			Content: "error executing command",
+		})
+		if err != nil {
+			Session.InteractionRespond(&i, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Flags:   1 << 6,
+					Content: "error executing command",
+				},
+			})
+			log.Errorf("err sending message %s", err)
+		}
+		Session.ChannelMessageDelete(i.ChannelID, message.ID)
+		return
+	}
+	return
 }

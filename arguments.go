@@ -2,8 +2,10 @@ package framework
 
 import (
 	"errors"
+	"fmt"
 	"github.com/QPixel/orderedmap"
 	"github.com/bwmarrin/discordgo"
+	"github.com/dlclark/regexp2"
 	"strconv"
 	"strings"
 )
@@ -36,7 +38,10 @@ var (
 	Channel   ArgTypeGuards = "channel"
 	User      ArgTypeGuards = "user"
 	Role      ArgTypeGuards = "role"
+	GuildArg  ArgTypeGuards = "guild"
+	Message   ArgTypeGuards = "message"
 	Boolean   ArgTypeGuards = "bool"
+	Id        ArgTypeGuards = "id"
 	SubCmd    ArgTypeGuards = "subcmd"
 	SubCmdGrp ArgTypeGuards = "subcmdgrp"
 	ArrString ArgTypeGuards = "arrString"
@@ -52,7 +57,7 @@ type ArgInfo struct {
 	Flag          bool
 	DefaultOption string
 	Choices       []string
-	Regex         string
+	Regex         *regexp2.Regexp
 }
 
 // CommandArg
@@ -113,14 +118,28 @@ func (cI *CommandInfo) AddArg(argument string, typeGuard ArgTypeGuards, match Ar
 		Match:         match,
 		DefaultOption: defaultOption,
 		Choices:       nil,
-		Regex:         "",
+		Regex:         nil,
 	})
 	return cI
 }
 
 // AddFlagArg
 // Adds a flag arg, which is a special type of argument
+// This type of argument allows for the user to place the "phrase" (e.g: --debug) anywhere
+// in the command string and the parser will find it.
 func (cI *CommandInfo) AddFlagArg(flag string, typeGuard ArgTypeGuards, match ArgTypes, description string, required bool, defaultOption string) *CommandInfo {
+	regexString := flag
+	if match == ArgOption {
+		// Currently, it only supports a limited character set.
+		// todo figure out how to detect any character
+		regexString = fmt.Sprintf("--%s (([a-zA-Z0-9:/.]+)|(\"[a-zA-Z0-9:/. ]+\"))", flag)
+	} else {
+		regexString = fmt.Sprintf("--%s", flag)
+	}
+	regex, err := regexp2.Compile(regexString, 0)
+	if err != nil {
+		log.Fatalf("Unable to create regex for flag on command %s flag: %s", cI.Trigger, flag)
+	}
 	cI.Arguments.Set(flag, &ArgInfo{
 		Description:   description,
 		Required:      required,
@@ -128,7 +147,7 @@ func (cI *CommandInfo) AddFlagArg(flag string, typeGuard ArgTypeGuards, match Ar
 		Match:         match,
 		TypeGuard:     typeGuard,
 		DefaultOption: defaultOption,
-		Regex:         "",
+		Regex:         regex,
 	})
 	return cI
 }
@@ -153,87 +172,61 @@ func (cI *CommandInfo) SetTyping(isTyping bool) *CommandInfo {
 	return cI
 }
 
+//todo subcommand stuff
+//// BindToChoice
+//// Bind an arg to choice (subcmd)
+//func (cI *CommandInfo) BindToChoice(arg string, choice string) {
+//
+//}
+
+// CreateAppOptSt
+// Creates an ApplicationOptionsStruct for all the args.
+func (cI *CommandInfo) CreateAppOptSt() *discordgo.ApplicationCommandOption {
+	return &discordgo.ApplicationCommandOption{}
+}
+
 // -- Argument Parser --
 
 // ParseArguments
-// Parses the arguments into a pointer to an Arguments struct
+// Version two of the argument parser
 func ParseArguments(args string, infoArgs *orderedmap.OrderedMap) *Arguments {
 	ar := make(Arguments)
+
 	if args == "" || len(infoArgs.Keys()) < 1 {
 		return &ar
 	}
 	// Split string on spaces to get every "phrase"
-	splitString := strings.Split(args, " ")
 
-	// Current Position in the infoArgs map
-	currentPos := 0
-
+	// bool to parse content strings
+	moreContent := false
 	// Keys of infoArgs
 	k := infoArgs.Keys()
+	var modK []string
+	// First find all flags in the string.
+	splitString, ar, modK := findAllFlags(args, k, infoArgs, &ar)
+	// Find all the option args (e.g. single 'phrases' or quoted strings)
+	// Then return the currentPos, so we can index k and find remaining keys.
+	// Also return a modified Arguments struct
 
-	for i := 0; i < len(splitString); i++ {
-		for n := currentPos; n <= len(k); n++ {
-			if n > len(k)+1 || currentPos+1 > len(k) {
-				break
-			}
-			v, _ := infoArgs.Get(k[currentPos])
-			vv := v.(*ArgInfo)
-			switch vv.Match {
-			case ArgOption:
-				// Lets first check the typeguard to see if the str matches the arg
-				if checkTypeGuard(splitString[i], vv.TypeGuard) {
-					// todo abstract this into handleArgOption
-					// Handle quoted ArgOptions separately
-					if strings.Contains(splitString[i], "\"") {
-						st := CommandArg{}
-						st, i = handleQuotedString(splitString, *vv, i)
-						ar[k[currentPos]] = st
-						currentPos++
-						break
-					}
-					// Handle ArgOption
-					ar[k[currentPos]] = handleArgOption(splitString[i], *vv)
-					currentPos++
-					break
-				}
-				if n+1 > len(splitString) {
-					break
-				}
-				// If the TypeGuard does not match check to see if the Arg is required or not
-				if vv.Required {
-					// Set the CommandArg to the default option, which is usually ""
-					ar[k[currentPos]] = CommandArg{
-						info:  *vv,
-						Value: vv.DefaultOption,
-					}
-					currentPos++
-					break
-				} else {
-					// If it's not required, we set the CommandArg to ""
-					ar[k[currentPos]] = CommandArg{
-						info:  *vv,
-						Value: "",
-					}
-					currentPos++
-					break
-				}
-			case ArgContent:
-				// Takes the splitString and currentPos to find how many more elements in the slice
-				// need to join together
-				contentString := ""
-				contentString, i = createContentString(splitString, i)
-				ar[k[currentPos]] = CommandArg{
-					info:  *vv,
-					Value: contentString,
-				}
-				break
-			default:
-				break
-			}
-			continue
+	ar, moreContent, splitString, modK = findAllOptionArgs(splitString, modK, infoArgs, &ar)
+
+	// If there is more content, lets find it
+	if moreContent == true {
+		v, ok := infoArgs.Get(modK[0])
+		if !ok {
+			return &ar
 		}
+		vv := v.(*ArgInfo)
+		commandContent, _ := createContentString(splitString, 0)
+		ar[modK[0]] = CommandArg{
+			info:  *vv,
+			Value: commandContent,
+		}
+		return &ar
+		// Else return the args struct
+	} else {
+		return &ar
 	}
-	return &ar
 }
 
 /* Argument Parsing Helpers */
@@ -247,22 +240,254 @@ func createContentString(splitString []string, currentPos int) (string, int) {
 	return strings.TrimSuffix(str, " "), currentPos
 }
 
-func handleQuotedString(splitString []string, argInfo ArgInfo, currentPos int) (CommandArg, int) {
-	str := ""
-	splitString[currentPos] = strings.TrimPrefix(splitString[currentPos], "\"")
-	for i := currentPos; i < len(splitString); i++ {
-		if !strings.HasSuffix(splitString[i], "\"") {
-			str += splitString[i] + " "
+// Finds all the 'option' type args
+func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.OrderedMap, args *Arguments) (Arguments, bool, []string, []string) {
+	if len(keys) == 0 || keys == nil {
+		return *args, false, []string{}, []string{}
+	}
+	modifiedArgString := ""
+	var modKeys []string
+	var indexes []int
+	// If the length of the argString is equal to the length of keys
+	// We can just set each value in argString to a CommandArg
+	// If a match field is equal to the content we will return early.
+	// This is a rare occurrence. But this allows for a faster result
+	if len(argString) == len(keys) {
+		for i, v := range argString {
+			// error handling
+			iA, ok := infoArgs.Get(keys[i])
+			if !ok {
+				err := errors.New(fmt.Sprintf("Unable to find map relating to key: %s", keys[i]))
+				SendErrorReport("", "", "", "Argument Parsing error", err)
+				continue
+			}
+			vv := iA.(*ArgInfo)
+			// ArgContent type should always be the last item in the slice
+			// Should be safe to return early
+			if vv.Match == ArgContent {
+				modifiedArgString = strings.Join(argString[i:], " ")
+				modKeys = RemoveItems(keys, indexes)
+				return *args, true, createSplitString(modifiedArgString), modKeys
+			}
+			if checkTypeGuard(v, vv.TypeGuard) {
+				(*args)[keys[i]] = handleArgOption(v, *vv)
+				indexes = append(indexes, i)
+			}
+		}
+		return *args, false, createSplitString(modifiedArgString), modKeys
+	}
+	// (semi) Brute force method
+	// First lets find all required args
+	currentPos := 0
+	for i, v := range keys {
+		// error handling
+		iA, ok := infoArgs.Get(v)
+		if !ok {
+			err := errors.New(fmt.Sprintf("Unable to find map relating to key: %s", keys[i]))
+			SendErrorReport("", "", "", "Argument Parsing error", err)
+			continue
+		}
+		vv := iA.(*ArgInfo)
+		if vv.Required {
+			if vv.TypeGuard != String {
+				var value string
+				value, argString = findTypeGuard(strings.Join(argString, " "), argString, vv.TypeGuard)
+				(*args)[v] = handleArgOption(value, *vv)
+				indexes = append(indexes, i)
+			} else if checkTypeGuard(argString[currentPos], vv.TypeGuard) {
+				(*args)[v] = handleArgOption(argString[currentPos], *vv)
+				currentPos++
+				indexes = append(indexes, i)
+			} else {
+				(*args)[v] = handleArgOption(vv.DefaultOption, *vv)
+				indexes = append(indexes, i)
+				continue
+			}
 		} else {
-			str += strings.TrimSuffix(splitString[i], "\"")
-			currentPos = i
 			break
 		}
 	}
-	return CommandArg{
-		info:  argInfo,
-		Value: str,
-	}, currentPos
+	// Remove already found keys and clear the index list
+	// We also reset some values that we reuse
+	//if
+	modKeys = RemoveItems(keys, indexes)
+	argString = argString[currentPos:]
+	indexes = nil
+	currentPos = 0
+	// Now lets find the not required args
+	for _, v := range modKeys {
+		// error handling
+		iA, ok := infoArgs.Get(v)
+		if !ok {
+			err := errors.New(fmt.Sprintf("Unable to find map relating to key: %s", v))
+			SendErrorReport("", "", "", "Argument Parsing error", err)
+			continue
+		}
+		vv := iA.(*ArgInfo)
+		// If we find an arg that is required send an error and return
+		if vv.Required {
+			err := errors.New(fmt.Sprintf("Found a required arg where there is supposed to be none %s", v))
+			SendErrorReport("", "", "", "Argument Parsing error", err)
+			break
+		}
+		if vv.Match == ArgContent {
+			modifiedArgString = strings.Join(argString, " ")
+			return *args, true, createSplitString(modifiedArgString), modKeys
+		}
+		// Break early if current pos is the length of the array
+		if currentPos == len(argString) {
+			break
+		}
+		if vv.TypeGuard != String {
+			var value string
+			value, argString = findTypeGuard(strings.Join(argString, " "), argString, vv.TypeGuard)
+			(*args)[v] = handleArgOption(value, *vv)
+		} else if checkTypeGuard(argString[currentPos], vv.TypeGuard) {
+			(*args)[v] = handleArgOption(argString[currentPos], *vv)
+			currentPos++
+		} else {
+
+		}
+	}
+	//
+	return *args, false, createSplitString(modifiedArgString), modKeys
+}
+
+func findTypeGuard(input string, array []string, typeguard ArgTypeGuards) (string, []string) {
+	switch typeguard {
+	case Int:
+		if match, isMatch := Misc["int"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	case Channel:
+		if match, isMatch := MentionStringRegexes["channel"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		} else if match, isMatch := MentionStringRegexes["id"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	case Role:
+		if match, isMatch := MentionStringRegexes["role"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		} else if match, isMatch := MentionStringRegexes["id"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	case User:
+		if match, isMatch := MentionStringRegexes["user"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		} else if match, isMatch := MentionStringRegexes["id"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	case ArrString:
+		if match, isMatch := TypeGuard["arrString"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	case Message:
+		if match, isMatch := TypeGuard["message_url"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	}
+	return "", array
+}
+
+func findAllFlags(argString string, keys []string, infoArgs *orderedmap.OrderedMap, args *Arguments) ([]string, Arguments, []string) {
+	modifiedArgString := argString
+	var indexes []int
+	var modKeys []string
+	for index, a := range keys {
+		v, _ := infoArgs.Get(a)
+		vv := v.(*ArgInfo)
+		// Skip because the argument has no flag
+		if !vv.Flag {
+			continue
+		}
+		// Use the compiled regex to search the arg string for a matching result.
+		match, err := vv.Regex.FindStringMatch(argString)
+		// Error handling/no match
+		if err != nil || match == nil {
+			if vv.Match == ArgOption {
+				(*args)[a] = handleArgOption(vv.DefaultOption, *vv)
+			} else {
+				(*args)[a] = CommandArg{info: *vv, Value: "false"}
+			}
+			// Set the modified arg string to the mod string
+			indexes = append(indexes, index)
+			continue
+		}
+
+		// Check to see if the flag is a string 'option' or a boolean 'flag'
+		if vv.Match == ArgOption {
+			val := strings.Trim(strings.SplitN(match.String(), " ", 2)[1], "\"")
+			if checkTypeGuard(val, vv.TypeGuard) {
+				(*args)[a] = handleArgOption(val, *vv)
+			}
+		} else if vv.Match == ArgFlag {
+			(*args)[a] = CommandArg{info: *vv, Value: "true"}
+		} // todo figure out if indexes need to put an else statement here
+
+		// Replace all reference to the flag in the string.
+		modString, err := vv.Regex.Replace(modifiedArgString, "", -1, -1)
+		if err != nil {
+			continue
+		}
+		// Set the modified arg string to the mod string
+		modifiedArgString = modString
+		indexes = append(indexes, index)
+	}
+	if len(indexes) > 0 {
+		// set keys to nil if flags have already gotten all the args
+		if len(indexes) == len(keys) {
+			modKeys = nil
+			return []string{}, *args, keys
+		}
+		modKeys = RemoveItems(keys, indexes)
+	}
+	if modifiedArgString == "" {
+		modifiedArgString = argString
+	}
+	if len(modKeys) == 0 || modKeys == nil {
+		modKeys = keys
+	}
+	return createSplitString(modifiedArgString), *args, modKeys
+}
+
+// Creates a "split" string (array of strings that is split off of spaces
+func createSplitString(argString string) []string {
+	splitStr := strings.SplitAfter(argString, " ")
+	var newSplitStr []string
+	quotedStringBuffer := ""
+	isQuotedString := false
+	for _, v := range splitStr {
+		if v == "" || v == " " {
+			continue
+		}
+		// Checks to see if the string is a quoted argument.
+		// If so, it will combine it into one string
+		if strings.Contains(v, "\"") || isQuotedString {
+			if strings.HasSuffix(strings.Trim(v, " "), "\"") {
+				// Trim quotes and trim space suffix
+				quotedStringBuffer = strings.TrimSuffix(strings.Trim(quotedStringBuffer+strings.Trim(v, " "), "\""), " ")
+				newSplitStr = append(newSplitStr, quotedStringBuffer)
+
+				isQuotedString = false
+				quotedStringBuffer = ""
+				continue
+			}
+			isQuotedString = true
+			quotedStringBuffer = quotedStringBuffer + v
+			continue
+		} else {
+			// If the string suffix contains a whitespace character, we need to remove that
+			v = strings.TrimSuffix(v, " ")
+			newSplitStr = append(newSplitStr, v)
+		}
+	}
+	return newSplitStr
 }
 
 func handleArgOption(str string, info ArgInfo) CommandArg {
@@ -309,8 +534,12 @@ func checkTypeGuard(str string, typeguard ArgTypeGuards) bool {
 			return true
 		}
 		return false
+	case Message:
+		if isMatch, _ := TypeGuard["message_url"].MatchString(str); isMatch {
+			return true
+		}
+		return false
 	}
-
 	return false
 }
 

@@ -17,7 +17,6 @@ import (
 type GuildInfo struct {
 	AddedDate                  int64                    `json:"addedDate"`                     // The date the bot was added to the server
 	Prefix                     string                   `json:"prefix"`                        // The bot prefix
-	GuildLanguage              string                   `json:"guildLanguage"`                 // The guilds language
 	ModeratorIds               []string                 `json:"moderatorIds"`                  // The list of user/role IDs allowed to run mod-only commands
 	WhitelistIds               []string                 `json:"whitelistIds"`                  // List of user/role Ids that a user MUST have one of in order to run any commands, including public ones
 	IgnoredIds                 []string                 `json:"ignoredIds"`                    // List of user/role IDs that can never run commands, even public ones
@@ -59,6 +58,30 @@ var muteLock = make(map[string]*sync.Mutex)
 // If the guild doesn't exist, initialize a new guild and save it before returning
 // Return a pointer to the guild object and pass that around instead, to avoid information desync
 func getGuild(guildId string) *Guild {
+	// The command is being ran as a dm, send back an empty guild object with default fields
+	if guildId == "" {
+		return &Guild{
+			ID: "",
+			Info: GuildInfo{
+				AddedDate:                  time.Now().Unix(),
+				Prefix:                     "!",
+				DeletePolicy:               false,
+				ResponseChannelId:          "",
+				MuteRoleId:                 "",
+				GlobalDisabledTriggers:     nil,
+				ChannelDisabledTriggers:    make(map[string][]string),
+				CustomCommands:             make(map[string]CustomCommand),
+				ModeratorIds:               nil,
+				IgnoredIds:                 nil,
+				BannedWordDetector:         false,
+				GuildBannedWords:           nil,
+				BannedWordDetectorRoles:    nil,
+				BannedWordDetectorChannels: nil,
+				MutedUsers:                 make(map[string]int64),
+				Storage:                    make(map[string]interface{}),
+			},
+		}
+	}
 	if guild, ok := Guilds[guildId]; ok {
 		return guild
 	} else {
@@ -67,7 +90,6 @@ func getGuild(guildId string) *Guild {
 			ID: guildId,
 			Info: GuildInfo{
 				AddedDate:                  time.Now().Unix(),
-				GuildLanguage:              "en",
 				Prefix:                     "!",
 				DeletePolicy:               false,
 				ResponseChannelId:          "",
@@ -252,13 +274,6 @@ func (g *Guild) MemberOrRoleInList(checkId string, list []string) bool {
 // Set the prefix, then save the guild data
 func (g *Guild) SetPrefix(newPrefix string) {
 	g.Info.Prefix = newPrefix
-	g.save()
-}
-
-// SetLang
-// Set the prefix, then save the guild data
-func (g *Guild) SetLang(lang string) {
-	g.Info.GuildLanguage = lang
 	g.save()
 }
 

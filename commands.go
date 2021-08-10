@@ -2,19 +2,18 @@ package framework
 
 import (
 	"github.com/QPixel/orderedmap"
+	"runtime"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-// TODO Clean up this file
 // commands.go
 // This file contains everything required to add core commands to the bot, and parse commands from a message
 
 // GroupTypes
 const (
 	Moderation = "moderation"
-	Module     = "module"
 	Utility    = "utility"
 )
 
@@ -26,8 +25,8 @@ type CommandInfo struct {
 	Description string                 // A short description of what the command does
 	Group       string                 // The group this command belongs to
 	ParentID    string                 // The ID of the parent command
-	Public      bool                   // Whether or not non-admins and non-mods can use this command
-	IsTyping    bool                   // Whether or not the command will show a typing thing when ran.
+	Public      bool                   // Whether non-admins and non-mods can use this command
+	IsTyping    bool                   // Whether the command will show a typing thing when ran.
 	IsParent    bool                   // If the command is the parent of a subcommand tree
 	IsChild     bool                   // If the command is the child
 	Trigger     string                 // The string that will trigger the command
@@ -46,7 +45,7 @@ type Context struct {
 
 // BotFunction
 // This type defines the functions that are called when commands are triggered
-// Contexts are also passed as pointers so they are not re-allocated when passed through
+// Contexts are also passed as pointers, so they are not re-allocated when passed through
 type BotFunction func(ctx *Context)
 
 // Command
@@ -56,6 +55,8 @@ type Command struct {
 	Function BotFunction
 }
 
+// ChildCommand
+// Defines how child commands are stored
 type ChildCommand map[string]map[string]Command
 
 // CustomCommand
@@ -63,16 +64,16 @@ type ChildCommand map[string]map[string]Command
 type CustomCommand struct {
 	Content     string // The content of the custom command. Custom commands are just special strings after all
 	InvokeCount int64  // How many times the command has been invoked; int64 for easier use with json
-	Public      bool   // Whether or not non-admins and non-mods can use this command
+	Public      bool   // Whether non-admins and non-mods can use this command
 }
 
 // commands
-// All of the registered core commands (not custom commands)
+// All the registered core commands (not custom commands)
 // This is private so that other commands cannot modify it
 var commands = make(map[string]Command)
 
 // childCommands
-// All of the registered childcommands (subcmdgrps)
+// All the registered ChildCommands (SubCmdGrps)
 // This is private so other commands cannot modify it
 var childCommands = make(ChildCommand)
 
@@ -81,7 +82,7 @@ var childCommands = make(ChildCommand)
 var commandAliases = make(map[string]string)
 
 // slashCommands
-// All of the registered core commands that are also slash commands
+// All the registered core commands that are also slash commands
 // This is also private so other commands cannot modify it
 var slashCommands = make(map[string]discordgo.ApplicationCommand)
 
@@ -128,8 +129,16 @@ func AddChildCommand(info *CommandInfo, function BotFunction) {
 // Adds a slash command to the bot
 // Allows for separation between normal commands and slash commands
 func AddSlashCommand(info *CommandInfo) {
-	s := createSlashCommandStruct(info)
-	slashCommands[strings.ToLower(info.Trigger)] = *s
+	if !info.IsParent || !info.IsChild {
+		s := createSlashCommandStruct(info)
+		slashCommands[strings.ToLower(info.Trigger)] = *s
+		return
+	}
+	if info.IsParent {
+		s := createSlashSubCmdStruct(info, childCommands[info.Trigger])
+		slashCommands[strings.ToLower(info.Trigger)] = *s
+		return
+	}
 }
 
 // AddSlashCommands
@@ -174,12 +183,6 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 		if channel, err = session.Channel(message.ChannelID); err != nil {
 			return
 		}
-	}
-
-	// If we are in DMs, ignore the message
-	// In the future, this can be used to handle special DM-only commands
-	if channel.Type == discordgo.ChannelTypeDM {
-		return
 	}
 
 	// Ignore messages sent by the bot
@@ -250,6 +253,7 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 			if command.Info.IsTyping && g.Info.ResponseChannelId == "" {
 				_ = Session.ChannelTyping(message.ChannelID)
 			}
+			defer handleCommandError(g.ID, channel.ID, message.Author.ID)
 			if command.Info.IsParent {
 				handleChildCommand(*argString, command, message.Message, g)
 				return
@@ -310,5 +314,20 @@ func handleChildCommand(argString string, command Command, message *discordgo.Me
 		Args:    *ParseArguments(split[1], childCmd.Info.Arguments),
 		Message: message,
 	})
+	return
+}
+
+func handleCommandError(gID string, cId string, uId string) {
+	if r := recover(); r != nil {
+		log.Warningf("Recovering from panic: %s", r)
+		log.Warningf("Sending Error report to admins")
+		SendErrorReport(gID, cId, uId, "Error!", r.(runtime.Error))
+		message, err := Session.ChannelMessageSend(cId, "Error!")
+		if err != nil {
+			log.Errorf("err sending message %s", err)
+		}
+		_ = Session.ChannelMessageDelete(cId, message.ID)
+		return
+	}
 	return
 }

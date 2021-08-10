@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -24,6 +25,7 @@ type Response struct {
 	Success            bool
 	Loading            bool
 	Ephemeral          bool
+	Reply              bool
 	Embed              *discordgo.MessageEmbed
 	ResponseComponents *ResponseComponents
 }
@@ -71,6 +73,7 @@ func NewResponse(ctx *Context, messageComponents bool, ephemeral bool) *Response
 		},
 		Loading:   ctx.Cmd.IsTyping,
 		Ephemeral: ephemeral,
+		Reply:     ephemeral,
 	}
 	if messageComponents {
 		r.ResponseComponents.Components = CreateComponentFields()
@@ -90,8 +93,74 @@ func NewResponse(ctx *Context, messageComponents bool, ephemeral bool) *Response
 				Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 			})
 		}
-
 	}
+	// If the command context is not empty, append the command
+	if ctx.Cmd.Trigger != "" {
+		// Get the command used as a string, and all interpreted arguments, so it can be a part of the output
+		commandUsed := ""
+		if r.Ctx.Cmd.IsChild {
+			commandUsed = fmt.Sprintf("%s%s %s", r.Ctx.Guild.Info.Prefix, r.Ctx.Cmd.ParentID, r.Ctx.Cmd.Trigger)
+		} else {
+			commandUsed = r.Ctx.Guild.Info.Prefix + r.Ctx.Cmd.Trigger
+		}
+		// Just makes the thing prettier
+		if ctx.Interaction != nil {
+			commandUsed = "/" + r.Ctx.Cmd.Trigger
+		}
+		for _, k := range r.Ctx.Cmd.Arguments.Keys() {
+			arg := ctx.Args[k]
+			if arg.StringValue() == "" {
+				continue
+			}
+			vv, ok := r.Ctx.Cmd.Arguments.Get(k)
+
+			if ok {
+				argInfo := vv.(*ArgInfo)
+				switch argInfo.TypeGuard {
+				case Int:
+					fallthrough
+				case Boolean:
+					fallthrough
+				case String:
+					commandUsed += " " + arg.StringValue()
+					break
+				case User:
+					user, err := arg.UserValue(Session)
+					if err != nil {
+						commandUsed += " " + arg.StringValue()
+					} else {
+						commandUsed += " " + user.Mention()
+					}
+				case Role:
+					role, err := arg.RoleValue(Session, r.Ctx.Guild.ID)
+					if err != nil {
+						commandUsed += " " + arg.StringValue()
+					} else {
+						commandUsed += " " + role.Mention()
+					}
+				case Channel:
+					channel, err := arg.ChannelValue(Session)
+					if err != nil {
+						commandUsed += " " + arg.StringValue()
+					} else {
+						commandUsed += " " + channel.Mention()
+					}
+				}
+			} else {
+				commandUsed += " " + arg.StringValue()
+			}
+		}
+
+		commandUsed = "```\n" + commandUsed + "\n```"
+
+		r.AppendField("Command used:", commandUsed, false)
+	}
+
+	// If the message is not nil, append an invoker
+	if ctx.Message != nil {
+		r.AppendField("Invoked by:", r.Ctx.Message.Author.Mention(), false)
+	}
+
 	return r
 }
 
@@ -317,7 +386,7 @@ func (r *Response) Send(success bool, title string, description string) {
 		Embed:      r.Embed,
 		Components: r.ResponseComponents.Components,
 	})
-	if err != nil {
+	if err != nil && r.Reply {
 		// Reply to user if no output channel
 		_, err = ReplyToUser(r.Ctx.Message.ChannelID, &discordgo.MessageSend{
 			Embed:      r.Embed,
@@ -334,6 +403,12 @@ func (r *Response) Send(success bool, title string, description string) {
 		if err != nil {
 			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Message.ChannelID, r.Ctx.Message.Author.ID, "Ultimately failed to send bot response", err)
 		}
+	} else if !r.Reply {
+		// If the command does not want to reply lets just send it to the channel the command was invoked
+		_, err = Session.ChannelMessageSendComplex(r.Ctx.Message.ChannelID, &discordgo.MessageSend{
+			Embed:      r.Embed,
+			Components: r.ResponseComponents.Components,
+		})
 	}
 }
 
