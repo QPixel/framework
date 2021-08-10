@@ -17,6 +17,7 @@ import (
 type GuildInfo struct {
 	AddedDate                  int64                    `json:"addedDate"`                     // The date the bot was added to the server
 	Prefix                     string                   `json:"prefix"`                        // The bot prefix
+	GuildLanguage              string                   `json:"guildLanguage"`                 // Guilds default language todo make language per user
 	ModeratorIds               []string                 `json:"moderatorIds"`                  // The list of user/role IDs allowed to run mod-only commands
 	WhitelistIds               []string                 `json:"whitelistIds"`                  // List of user/role Ids that a user MUST have one of in order to run any commands, including public ones
 	IgnoredIds                 []string                 `json:"ignoredIds"`                    // List of user/role IDs that can never run commands, even public ones
@@ -66,6 +67,7 @@ func getGuild(guildId string) *Guild {
 				AddedDate:                  time.Now().Unix(),
 				Prefix:                     "!",
 				DeletePolicy:               false,
+				GuildLanguage:              "en",
 				ResponseChannelId:          "",
 				MuteRoleId:                 "",
 				GlobalDisabledTriggers:     nil,
@@ -92,6 +94,7 @@ func getGuild(guildId string) *Guild {
 				AddedDate:                  time.Now().Unix(),
 				Prefix:                     "!",
 				DeletePolicy:               false,
+				GuildLanguage:              "en",
 				ResponseChannelId:          "",
 				MuteRoleId:                 "",
 				GlobalDisabledTriggers:     nil,
@@ -274,6 +277,13 @@ func (g *Guild) MemberOrRoleInList(checkId string, list []string) bool {
 // Set the prefix, then save the guild data
 func (g *Guild) SetPrefix(newPrefix string) {
 	g.Info.Prefix = newPrefix
+	g.save()
+}
+
+// SetLang
+// Set the prefix, then save the guild data
+func (g *Guild) SetLang(lang string) {
+	g.Info.GuildLanguage = lang
 	g.save()
 }
 
