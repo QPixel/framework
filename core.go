@@ -43,6 +43,10 @@ var botAdmins = make(map[string]bool)
 // Similar to BotAdmins, this isn't saved to .json and is added programmatically
 var botToken = ""
 
+// BotTestingId
+// A string of the testing guild. Used for slash commands
+var botTestingId = ""
+
 // ColorSuccess
 // The color to use for response embeds reporting success
 var ColorSuccess = 0x55F485
@@ -71,6 +75,12 @@ func AddAdmin(userId string) {
 // A function that allows a single token to be added, but not removed
 func SetToken(token string) {
 	botToken = token
+}
+
+// SetTestingId
+// A function that allows a single id to be added, but not removed
+func SetTestingId(token string) {
+	botTestingId = token
 }
 
 // IsAdmin
@@ -173,16 +183,17 @@ func Start() {
 	if numAdmins == 0 {
 		log.Warning("You have not added any bot admins! Only moderators will be able to run commands, and permissions cannot be changed!")
 	}
-	// Register slash commands
-	//slashChannel := make(chan string)
-	//log.Info("Registering slash commands")
-	//go AddSlashCommands("833901685054242846", slashChannel)
+
+	//Register slash commands
+	slashChannel := make(chan string)
+	log.Info("Registering slash commands")
+	go AddSlashCommands(botTestingId, slashChannel)
 
 	// Bot ready
 	log.Info("Initialization complete! The bot is now ready.")
 
-	// Info about slash commands
-	//log.Info(<-slashChannel)
+	//Info about slash commands
+	log.Info(<-slashChannel)
 
 	// -- GRACEFUL TERMINATION -- //
 
