@@ -1,6 +1,3 @@
-uberbot
-.env
-guilds/*.json
-.vscode
+# ignore IDE related files
 .idea
-.DS_Store
+.vscode

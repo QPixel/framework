@@ -51,6 +51,16 @@ var ColorSuccess = 0x55F485
 // The color to use for response embeds reporting failure
 var ColorFailure = 0xF45555
 
+// BotPresence
+var botPresence discordgo.GatewayStatusUpdate
+
+// SetPresence
+// Sets the gateway field for bot presence
+func SetPresence(presence discordgo.GatewayStatusUpdate) {
+	botPresence = presence
+	return
+}
+
 // AddAdmin
 // A function that allows admins to be added, but not removed
 func AddAdmin(userId string) {
@@ -102,7 +112,7 @@ func dgoLog(msgL, caller int, format string, a ...interface{}) {
 	}
 }
 
-// Start uberbot!
+// Start the bot.
 func Start() {
 	discordgo.Logger = dgoLog
 	// Load all the guilds
@@ -126,15 +136,7 @@ func Start() {
 	Session.SyncEvents = false
 	Session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
 	// Set the bots status
-	Session.Identify.Presence = discordgo.GatewayStatusUpdate{
-		Game: discordgo.Activity{
-			Name: "Mega Man Battle Network",
-			Type: 3,
-		},
-		Status: "dnd",
-		AFK:    true,
-		Since:  91879201,
-	}
+	Session.Identify.Presence = botPresence
 	// Open the session
 	log.Info("Connecting to Discord...")
 	err = Session.Open()
