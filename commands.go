@@ -2,19 +2,22 @@ package framework
 
 import (
 	"github.com/QPixel/orderedmap"
-	"runtime"
-	"strings"
-
 	"github.com/bwmarrin/discordgo"
+	"runtime"
+	"runtime/debug"
+	"strings"
+	"time"
 )
 
 // commands.go
 // This file contains everything required to add core commands to the bot, and parse commands from a message
 
 // GroupTypes
-const (
-	Moderation = "moderation"
-	Utility    = "utility"
+type Group string
+
+var (
+	Moderation Group = "moderation"
+	Utility    Group = "utility"
 )
 
 // CommandInfo
@@ -23,7 +26,7 @@ type CommandInfo struct {
 	Aliases     []string               // Aliases for the normal trigger
 	Arguments   *orderedmap.OrderedMap // Arguments for the command
 	Description string                 // A short description of what the command does
-	Group       string                 // The group this command belongs to
+	Group       Group                  // The group this command belongs to
 	ParentID    string                 // The ID of the parent command
 	Public      bool                   // Whether non-admins and non-mods can use this command
 	IsTyping    bool                   // Whether the command will show a typing thing when ran.
@@ -85,6 +88,9 @@ var commandAliases = make(map[string]string)
 // All the registered core commands that are also slash commands
 // This is also private so other commands cannot modify it
 var slashCommands = make(map[string]discordgo.ApplicationCommand)
+
+// commandsGC
+var commandsGC = 0
 
 // AddCommand
 // Add a command to the bot
@@ -227,13 +233,6 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 		}
 	}
 
-	// The command is valid, so now we need to delete the invoking message if that is configured
-	if g.Info.DeletePolicy {
-		err := Session.ChannelMessageDelete(message.ChannelID, message.ID)
-		if err != nil {
-			SendErrorReport(message.GuildID, message.ChannelID, message.Author.ID, "Failed to delete message: "+message.ID, err)
-		}
-	}
 	if !isCustom {
 		//Get the command to run
 		// Error Checking
@@ -253,6 +252,14 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 			if command.Info.IsTyping && g.Info.ResponseChannelId == "" {
 				_ = Session.ChannelTyping(message.ChannelID)
 			}
+			// The command is valid, so now we need to delete the invoking message if that is configured
+			if g.Info.DeletePolicy {
+				err := Session.ChannelMessageDelete(message.ChannelID, message.ID)
+				if err != nil {
+					SendErrorReport(message.GuildID, message.ChannelID, message.Author.ID, "Failed to delete message: "+message.ID, err)
+				}
+			}
+
 			defer handleCommandError(g.ID, channel.ID, message.Author.ID)
 			if command.Info.IsParent {
 				handleChildCommand(*argString, command, message.Message, g)
@@ -264,6 +271,13 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 				Args:    *ParseArguments(*argString, command.Info.Arguments),
 				Message: message.Message,
 			})
+			// Makes sure that variables ran in ParseArguments are gone.
+			if commandsGC == 25 && commandsGC > 25 {
+				debug.FreeOSMemory()
+				commandsGC = 0
+			} else {
+				commandsGC++
+			}
 			return
 		}
 	}
@@ -272,24 +286,9 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 // -- Helper Methods
 func handleChildCommand(argString string, command Command, message *discordgo.Message, g *Guild) {
 	split := strings.SplitN(argString, " ", 2)
-	// First lets see if this subcmd even exists
-	v, ok := command.Info.Arguments.Get("subcmdgrp")
-	// the command doesn't even have a subcmdgrp arg, return
-	if !ok {
-		return
-	}
 
-	choices := v.(*ArgInfo).Choices
-	subCmdExist := false
-	for _, choice := range choices {
-		if split[0] != choice {
-			continue
-		} else {
-			subCmdExist = true
-			break
-		}
-	}
-	if !subCmdExist {
+	childCmd, ok := childCommands[command.Info.Trigger][split[0]]
+	if !ok {
 		command.Function(&Context{
 			Guild:   g,
 			Cmd:     command.Info,
@@ -298,12 +297,11 @@ func handleChildCommand(argString string, command Command, message *discordgo.Me
 		})
 		return
 	}
-	childCmd, ok := childCommands[command.Info.Trigger][split[0]]
-	if !ok || len(split) < 2 {
-		command.Function(&Context{
+	if len(split) < 2 {
+		childCmd.Function(&Context{
 			Guild:   g,
-			Cmd:     command.Info,
-			Args:    nil,
+			Cmd:     childCmd.Info,
+			Args:    *ParseArguments("", childCmd.Info.Arguments),
 			Message: message,
 		})
 		return
@@ -326,6 +324,7 @@ func handleCommandError(gID string, cId string, uId string) {
 		if err != nil {
 			log.Errorf("err sending message %s", err)
 		}
+		time.Sleep(5 * time.Second)
 		_ = Session.ChannelMessageDelete(cId, message.ID)
 		return
 	}

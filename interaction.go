@@ -1,7 +1,6 @@
 package framework
 
 import (
-	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"runtime"
 )
@@ -22,9 +21,6 @@ var slashCommandTypes = map[ArgTypeGuards]discordgo.ApplicationCommandOptionType
 	//SubCmdGrp: discordgo.ApplicationCommandOptionSubCommandGroup,
 }
 
-//var componentHandlers
-
-//
 // getSlashCommandStruct
 // Creates a slash command struct
 // todo work on sub command stuff
@@ -44,8 +40,14 @@ func createSlashCommandStruct(info *CommandInfo) (st *discordgo.ApplicationComma
 	for i, k := range info.Arguments.Keys() {
 		v, _ := info.Arguments.Get(k)
 		vv := v.(*ArgInfo)
+		var sType discordgo.ApplicationCommandOptionType
+		if val, ok := slashCommandTypes[vv.TypeGuard]; ok {
+			sType = val
+		} else {
+			sType = slashCommandTypes["String"]
+		}
 		optionStruct := discordgo.ApplicationCommandOption{
-			Type:        slashCommandTypes[vv.TypeGuard],
+			Type:        sType,
 			Name:        k,
 			Description: vv.Description,
 			Required:    vv.Required,
@@ -105,47 +107,8 @@ func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 // handleInteractionCommand
 // Handles a slash command
 func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.ApplicationCommandData().Name == "rickroll-em" {
-		err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "Operation rickroll has begun",
-				Flags:   1 << 6,
-			},
-		})
-		if err != nil {
-			panic(err)
-		}
-
-		ch, err := s.UserChannelCreate(
-			i.ApplicationCommandData().TargetID,
-		)
-		if err != nil {
-			_, err = s.FollowupMessageCreate(Session.State.User.ID, i.Interaction, true, &discordgo.WebhookParams{
-				Content: fmt.Sprintf("Mission failed. Cannot send a message to this user: %q", err.Error()),
-				Flags:   1 << 6,
-			})
-			if err != nil {
-				panic(err)
-			}
-		}
-		_, err = s.ChannelMessageSend(
-			ch.ID,
-			fmt.Sprintf("%s sent you this: https://youtu.be/dQw4w9WgXcQ", i.Member.Mention()),
-		)
-		if err != nil {
-			panic(err)
-		}
-		return
-	}
 	g := getGuild(i.GuildID)
 
-	if g.Info.DeletePolicy {
-		err := Session.ChannelMessageDelete(i.ChannelID, i.ID)
-		if err != nil {
-			SendErrorReport(i.GuildID, i.ChannelID, i.Member.User.ID, "Failed to delete message: "+i.ID, err)
-		}
-	}
 	trigger := i.ApplicationCommandData().Name
 	if !IsAdmin(i.Member.User.ID) {
 		// Ignore the command if it is globally disabled
@@ -175,6 +138,7 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 	if IsAdmin(i.Member.User.ID) || command.Info.Public || g.IsMod(i.Member.User.ID) {
 		// Check if the command is public, or if the current user is a bot moderator
 		// Bot admins supercede both checks
+
 		defer handleSlashCommandError(*i.Interaction)
 		command.Function(&Context{
 			Guild:       g,
@@ -198,7 +162,7 @@ func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreat
 	i.Message.Embeds[0].Description = content
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		// Buttons also may update the message which they was attached to.
-		// Or may just acknowledge (InteractionResponseDredeferMessageUpdate) that the event was received and not update the message.
+		// Or may just acknowledge (InteractionResponseDeferredMessageUpdate) that the event was received and not update the message.
 		// To update it later you need to use interaction response edit endpoint.
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{

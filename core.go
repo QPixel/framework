@@ -1,11 +1,12 @@
 package framework
 
 import (
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	tlog "github.com/ubergeek77/tinylog"
 	"os"
 	"os/signal"
-
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,12 +16,16 @@ import (
 // This file contains the main code responsible for driving core bot functionality
 
 // messageState
-// Tells discordgo the amount of mesesages to cache
-var messageState = 20
+// Tells discordgo the amount of messages to cache
+var messageState = 500
 
 // log
 // The logger for the core bot
 var log = tlog.NewTaggedLogger("BotCore", tlog.NewColor("38;5;111"))
+
+// dlog
+// The logger for discordgo
+var dlog = tlog.NewTaggedLogger("DG", tlog.NewColor("38;5;111"))
 
 // Session
 // The Discord session, made public so commands can use it
@@ -32,9 +37,6 @@ var Session *discordgo.Session
 // They receive some privileges higher than guild moderators
 // This is a boolean map, because checking its values is dead simple this way
 var botAdmins = make(map[string]bool)
-
-// BotPresence
-var botPresence discordgo.GatewayStatusUpdate
 
 // BotToken
 // A string of the current bot token, usually set by the main method
@@ -77,15 +79,32 @@ func IsCommand(trigger string) bool {
 	return false
 }
 
-// SetPresence
-// Sets the presence struct after a session has been created
-func SetPresence(presence discordgo.GatewayStatusUpdate) {
-	botPresence = presence
-	return
+// dgoLog
+// Allows for discordgo to call tinylog
+func dgoLog(msgL, caller int, format string, a ...interface{}) {
+	pc, file, line, _ := runtime.Caller(caller)
+	files := strings.Split(file, "/")
+	file = files[len(files)-1]
+
+	name := runtime.FuncForPC(pc).Name()
+	fns := strings.Split(name, ".")
+	name = fns[len(fns)-1]
+	msg := fmt.Sprintf(format, a...)
+	switch msgL {
+	case discordgo.LogError:
+		dlog.Errorf("%s:%d:%s() %s", file, line, name, msg)
+	case discordgo.LogWarning:
+		dlog.Warningf("%s:%d:%s() %s", file, line, name, msg)
+	case discordgo.LogInformational:
+		dlog.Infof("%s:%d:%s() %s", file, line, name, msg)
+	case discordgo.LogDebug:
+		dlog.Debugf("%s:%d:%s() %s", file, line, name, msg)
+	}
 }
 
-// Start the bot!
+// Start uberbot!
 func Start() {
+	discordgo.Logger = dgoLog
 	// Load all the guilds
 	loadGuilds()
 
@@ -103,8 +122,19 @@ func Start() {
 	}
 	// Setup State specific variables
 	Session.State.MaxMessageCount = messageState
+	Session.LogLevel = discordgo.LogWarning
+	Session.SyncEvents = false
 	Session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
-	Session.Identify.Presence = botPresence
+	// Set the bots status
+	Session.Identify.Presence = discordgo.GatewayStatusUpdate{
+		Game: discordgo.Activity{
+			Name: "Mega Man Battle Network",
+			Type: 3,
+		},
+		Status: "dnd",
+		AFK:    true,
+		Since:  91879201,
+	}
 	// Open the session
 	log.Info("Connecting to Discord...")
 	err = Session.Open()
@@ -117,6 +147,7 @@ func Start() {
 
 	// Add the slash command handler to the list of user-defined handlers
 	AddHandler(handleInteraction)
+
 	// Add the handlers to the session
 	addHandlers()
 
@@ -141,18 +172,19 @@ func Start() {
 		log.Warning("You have not added any bot admins! Only moderators will be able to run commands, and permissions cannot be changed!")
 	}
 	// Register slash commands
-	slashChannel := make(chan string)
-	log.Info("Registering slash commands")
-	go AddSlashCommands("833901685054242846", slashChannel)
+	//slashChannel := make(chan string)
+	//log.Info("Registering slash commands")
+	//go AddSlashCommands("833901685054242846", slashChannel)
 
 	// Bot ready
 	log.Info("Initialization complete! The bot is now ready.")
 
 	// Info about slash commands
-	log.Info(<-slashChannel)
+	//log.Info(<-slashChannel)
+
 	// -- GRACEFUL TERMINATION -- //
 
-	// Set up a sigterm channel so we can detect when the application receives a TERM signal
+	// Set up a sigterm channel, so we can detect when the application receives a TERM signal
 	sigChannel := make(chan os.Signal, 1)
 	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, os.Interrupt, os.Kill)
 

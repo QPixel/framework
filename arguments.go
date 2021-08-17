@@ -45,6 +45,7 @@ var (
 	SubCmd    ArgTypeGuards = "subcmd"
 	SubCmdGrp ArgTypeGuards = "subcmdgrp"
 	ArrString ArgTypeGuards = "arrString"
+	Time      ArgTypeGuards = "time"
 )
 
 // ArgInfo
@@ -75,7 +76,7 @@ type Arguments map[string]CommandArg
 
 // CreateCommandInfo
 // Creates a pointer to a CommandInfo
-func CreateCommandInfo(trigger string, description string, public bool, group string) *CommandInfo {
+func CreateCommandInfo(trigger string, description string, public bool, group Group) *CommandInfo {
 	cI := &CommandInfo{
 		Aliases:     nil,
 		Arguments:   orderedmap.New(),
@@ -85,6 +86,13 @@ func CreateCommandInfo(trigger string, description string, public bool, group st
 		IsTyping:    false,
 		Trigger:     trigger,
 	}
+	return cI
+}
+
+// CreateRawCmdInfo
+// Creates a pointer to a CommandInfo
+func CreateRawCmdInfo(cI *CommandInfo) *CommandInfo {
+	cI.Arguments = orderedmap.New()
 	return cI
 }
 
@@ -248,34 +256,7 @@ func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.O
 	modifiedArgString := ""
 	var modKeys []string
 	var indexes []int
-	// If the length of the argString is equal to the length of keys
-	// We can just set each value in argString to a CommandArg
-	// If a match field is equal to the content we will return early.
-	// This is a rare occurrence. But this allows for a faster result
-	if len(argString) == len(keys) {
-		for i, v := range argString {
-			// error handling
-			iA, ok := infoArgs.Get(keys[i])
-			if !ok {
-				err := errors.New(fmt.Sprintf("Unable to find map relating to key: %s", keys[i]))
-				SendErrorReport("", "", "", "Argument Parsing error", err)
-				continue
-			}
-			vv := iA.(*ArgInfo)
-			// ArgContent type should always be the last item in the slice
-			// Should be safe to return early
-			if vv.Match == ArgContent {
-				modifiedArgString = strings.Join(argString[i:], " ")
-				modKeys = RemoveItems(keys, indexes)
-				return *args, true, createSplitString(modifiedArgString), modKeys
-			}
-			if checkTypeGuard(v, vv.TypeGuard) {
-				(*args)[keys[i]] = handleArgOption(v, *vv)
-				indexes = append(indexes, i)
-			}
-		}
-		return *args, false, createSplitString(modifiedArgString), modKeys
-	}
+
 	// (semi) Brute force method
 	// First lets find all required args
 	currentPos := 0
@@ -314,8 +295,13 @@ func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.O
 	argString = argString[currentPos:]
 	indexes = nil
 	currentPos = 0
+	// Return early if the argument parser has found all args
+	if argString == nil || len(argString) == 0 || len(modKeys) == 0 || modKeys == nil {
+		return *args, false, argString, modKeys
+	}
+
 	// Now lets find the not required args
-	for _, v := range modKeys {
+	for i, v := range modKeys {
 		// error handling
 		iA, ok := infoArgs.Get(v)
 		if !ok {
@@ -331,8 +317,8 @@ func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.O
 			break
 		}
 		if vv.Match == ArgContent {
-			modifiedArgString = strings.Join(argString, " ")
-			return *args, true, createSplitString(modifiedArgString), modKeys
+			modKeys = RemoveItems(modKeys, indexes)
+			return *args, true, argString, modKeys
 		}
 		// Break early if current pos is the length of the array
 		if currentPos == len(argString) {
@@ -342,9 +328,11 @@ func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.O
 			var value string
 			value, argString = findTypeGuard(strings.Join(argString, " "), argString, vv.TypeGuard)
 			(*args)[v] = handleArgOption(value, *vv)
+			indexes = append(indexes, i)
 		} else if checkTypeGuard(argString[currentPos], vv.TypeGuard) {
 			(*args)[v] = handleArgOption(argString[currentPos], *vv)
 			currentPos++
+			indexes = append(indexes, i)
 		} else {
 
 		}
@@ -356,7 +344,12 @@ func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.O
 func findTypeGuard(input string, array []string, typeguard ArgTypeGuards) (string, []string) {
 	switch typeguard {
 	case Int:
-		if match, isMatch := Misc["int"].FindStringMatch(input); isMatch == nil && match != nil {
+		if match, isMatch := TypeGuard["int"].FindStringMatch(input); isMatch == nil && match != nil {
+			return match.String(), RemoveItem(array, match.String())
+		}
+		return "", array
+	case Boolean:
+		if match, isMatch := TypeGuard["boolean"].FindStringMatch(input); isMatch == nil && match != nil {
 			return match.String(), RemoveItem(array, match.String())
 		}
 		return "", array
@@ -391,8 +384,18 @@ func findTypeGuard(input string, array []string, typeguard ArgTypeGuards) (strin
 			return match.String(), RemoveItem(array, match.String())
 		}
 		return "", array
+	case Time:
+		match := strings.Join(FindAllString(TimeRegexes["all"], input), "")
+		//if match, isMatch := TimeRegexes["all"].Mat(input); isMatch == nil && match != nil {
+		//	return match.String(), RemoveItem(array, match.String())
+		//}
+		if match != "" {
+			return match, RemoveItem(array, match)
+		}
+		return "", array
+	default:
+		return "", array
 	}
-	return "", array
 }
 
 func findAllFlags(argString string, keys []string, infoArgs *orderedmap.OrderedMap, args *Arguments) ([]string, Arguments, []string) {

@@ -2,7 +2,9 @@ package framework
 
 import (
 	"errors"
+	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/dlclark/regexp2"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,11 +29,20 @@ func RemoveItem(slice []string, delete string) []string {
 // Removes items from a slice by index
 func RemoveItems(slice []string, indexes []int) []string {
 	newSlice := make([]string, len(slice))
+	if len(indexes) >= len(slice) {
+		return newSlice
+	}
 	copy(newSlice, slice)
 	for _, v := range indexes {
-		newSlice[v] = newSlice[len(newSlice)-1]
-		newSlice[len(newSlice)-1] = ""
-		newSlice = newSlice[:len(newSlice)-1]
+		if len(newSlice) > v+1 && v != 0 {
+			v = v - 1
+		}
+		//newSlice[v] = newSlice[len(newSlice)-1]
+		//newSlice[len(newSlice)-1] = ""
+		//newSlice = newSlice[:len(newSlice)-1]
+		copy(newSlice[v:], newSlice[v+1:])    // Shift a[i+1:] left one index.
+		newSlice[len(newSlice)-1] = ""        // Erase last element (write zero value).
+		newSlice = newSlice[:len(newSlice)-1] // Truncate slice.
 	}
 	return newSlice
 }
@@ -107,22 +118,6 @@ func ExtractCommand(guild *GuildInfo, message string) (*string, *string) {
 
 		return &trigger, &fullArgs
 	} else {
-		if strings.Contains(message, "uber") {
-			// Same process as above prefix method, but split on a bot mention instead
-			split := strings.SplitN(message, "uber", 2)
-			content := strings.TrimPrefix(split[1], " ")
-			// If content is null someone just sent the prefix
-			if content == "" {
-				return nil, nil
-			}
-			// Attempt to pull the trigger out of the command content by splitting on spaces
-			trigger := strings.Fields(content)[0]
-			fullArgs := strings.SplitN(content, trigger, 2)[1]
-			fullArgs = strings.TrimPrefix(fullArgs, " ")
-			// Avoids issues with strings that are case sensitive
-			trigger = strings.ToLower(trigger)
-			return &trigger, &fullArgs
-		}
 		// The bot can only be mentioned with a space
 		botMention := Session.State.User.Mention() + " "
 
@@ -241,37 +236,122 @@ func ParseTime(content string) (int, string) {
 		return 0, "error lol"
 	}
 	duration := 0
-	displayDuration := "Indefinite"
+
 	multiplier := 1
-	for k, v := range TimeRegexes {
-		if isMatch, _ := v.MatchString(content); isMatch {
-			multiplier, _ = strconv.Atoi(EnsureNumbers(v.String()))
-			switch k {
-			case "seconds":
-				duration = multiplier + duration
-				displayDuration = "Second"
-			case "minutes":
-				duration = multiplier*60 + duration
-				displayDuration = "Minute"
-			case "hours":
-				duration = multiplier*60*60 + duration
-				displayDuration = "Hour"
-			case "days":
-				duration = multiplier*60*60*24 + duration
-				displayDuration = "Day"
-			case "weeks":
-				duration = multiplier*60*60*24*7 + duration
-				displayDuration = "Week"
-			case "years":
-				duration = multiplier*60*60*24*7*365 + duration
-				displayDuration = "Year"
-			}
+
+	matches := FindAllString(TimeRegexes["all"], content)
+	if len(matches) <= 0 {
+		return 0, "error lol"
+	}
+	for _, v := range matches {
+		// Grab only the letters out of the duration, to detect the unit
+		muteUnit := strings.ToLower(EnsureLetters(v))
+
+		// Grab the number out of the duration
+		// Errors shouldn't be possible due to EnsureNumbers
+		multiplier, _ = strconv.Atoi(EnsureNumbers(v))
+
+		// Use the string next to the number to check how long the mute should be for
+		switch muteUnit {
+		case "s":
+			duration = multiplier + duration
+		case "m":
+			duration = multiplier*60 + duration
+		case "h":
+			duration = multiplier*60*60 + duration
+		case "d":
+			duration = multiplier*60*60*24 + duration
+		case "w":
+			duration = multiplier*60*60*24*7 + duration
+		case "y":
+			duration = multiplier*60*60*24*7*52 + duration
+		default:
+			break
 		}
 	}
-	// Plurals matter!
-	if multiplier != 1 {
-		displayDuration += "s"
+
+	return duration, createDisplayDurationString(content)
+}
+
+func createDisplayDurationString(content string) (str string) {
+	// First tokenize
+	str = ""
+	matches := FindAllString(TimeRegexes["all"], content)
+	if matches == nil || len(matches) == 0 {
+		str = "Indefinite"
+		return
 	}
-	displayDuration = strconv.Itoa(multiplier) + " " + displayDuration
-	return duration, displayDuration
+	for i, v := range matches {
+		prefixChar := ""
+		if i+1 == len(matches) && len(matches) > 1 {
+			prefixChar = " & "
+		} else if i != 0 {
+			prefixChar = ", "
+		}
+		// Grab only the letters out of the duration, to detect the unit
+		muteUnit := strings.ToLower(EnsureLetters(v))
+
+		// Grab the number out of the duration
+		// Errors shouldn't be possible due to EnsureNumbers
+		multiplier, _ := strconv.Atoi(EnsureNumbers(v))
+
+		// clean this up
+		switch muteUnit {
+		case "s":
+			if multiplier > 1 {
+				str += prefixChar + fmt.Sprintf("%d Seconds", multiplier)
+				break
+			}
+			str += prefixChar + "Second"
+			break
+		case "m":
+			if multiplier > 1 {
+				str += prefixChar + fmt.Sprintf("%d Minutes", multiplier)
+				break
+			}
+			str += prefixChar + fmt.Sprintf("%d Minute", multiplier)
+			break
+		case "h":
+			if multiplier > 1 {
+				str += prefixChar + fmt.Sprintf("%d Hours", multiplier)
+				break
+			}
+			str += prefixChar + fmt.Sprintf("%d Hours", multiplier)
+			break
+		case "d":
+			if multiplier > 1 {
+				str += prefixChar + fmt.Sprintf("%d Days", multiplier)
+				break
+			}
+			str += prefixChar + fmt.Sprintf("%d Day", multiplier)
+			break
+		case "w":
+			if multiplier > 1 {
+				str += prefixChar + fmt.Sprintf("%d Weeks", multiplier)
+				break
+			}
+			str += prefixChar + fmt.Sprintf("%d Week", multiplier)
+			break
+		case "y":
+			if multiplier > 1 {
+				str += prefixChar + fmt.Sprintf("%d Years", multiplier)
+				break
+			}
+			str += prefixChar + fmt.Sprintf("%d Year", multiplier)
+			break
+		default:
+			break
+		}
+	}
+	return
+}
+
+func FindAllString(re *regexp2.Regexp, s string) []string {
+	var matches []string
+	m, _ := re.FindStringMatch(s)
+	for m != nil {
+		matches = append(matches, m.String())
+		m, _ = re.FindNextMatch(m)
+	}
+	return matches
 }
