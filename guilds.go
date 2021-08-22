@@ -50,7 +50,7 @@ type Guild struct {
 var Guilds = make(map[string]*Guild)
 
 // currentProvider
-// A reference to a function that provides the guild info system with a database
+// A reference to a struct of functions that provides the guild info system with a database
 // Or similar system to save guild data.
 var currentProvider GuildProvider
 
@@ -699,7 +699,7 @@ func (g *Guild) EnableCommandInChannel(command string, channelId string) error {
 
 // DisableCommandInChannel
 // Given a command and channel ID, add that command to that channel's list of blocked commands
-func (g *Guild) DisableTriggerInChannel(command string, channelId string) error {
+func (g *Guild) DisableCommandInChannel(command string, channelId string) error {
 	cleanedId := CleanId(channelId)
 	if cleanedId == "" {
 		return errors.New("provided channel ID is invalid")
@@ -741,7 +741,7 @@ func (g *Guild) SetResponseChannel(channelId string) error {
 }
 
 // Kick
-// Kick a member
+// Kicks a member
 func (g *Guild) Kick(userId string, reason string) error {
 	// Make sure the member exists
 	member, err := g.GetMember(userId)
@@ -758,7 +758,7 @@ func (g *Guild) Kick(userId string, reason string) error {
 }
 
 // Ban
-// Ban a user, who may not be a member
+// Bans a user, who may not be a member
 func (g *Guild) Ban(userId string, reason string, deleteDays int) error {
 	// Make sure the USER exists, because they may not be a member
 	user, err := GetUser(userId)

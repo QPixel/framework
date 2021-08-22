@@ -149,13 +149,13 @@ func Start() {
 	}
 
 	// Add the commandHandler to the list of user-defined handlers
-	AddHandler(commandHandler)
+	AddDGOHandler(commandHandler)
 
 	// Add the slash command handler to the list of user-defined handlers
-	AddHandler(handleInteraction)
+	AddDGOHandler(handleInteraction)
 
 	// Add the handlers to the session
-	addHandlers()
+	addDGoHandlers()
 
 	// Log that the login succeeded
 	log.Infof("Bot logged in as \"" + Session.State.Ready.User.Username + "#" + Session.State.Ready.User.Discriminator + "\"")
