@@ -28,6 +28,14 @@ type GuildInfo struct {
 	WhitelistIds            []string               `json:"whitelist_ids"`
 }
 
+//GuildProvider
+// Type that holds functions that can be easily modified to support a wide range
+// of storage types
+type GuildProvider struct {
+	Save func(guild *Guild)
+	Load func() map[string]*Guild
+}
+
 // Guild
 // The definition of a guild, which is simply its ID and Info
 type Guild struct {
@@ -40,6 +48,11 @@ type Guild struct {
 // We store pointers to the guilds, so that only one guild object is maintained across all contexts
 // Otherwise, there will be information desync
 var Guilds = make(map[string]*Guild)
+
+// currentProvider
+// A reference to a struct of functions that provides the guild info system with a database
+// Or similar system to save guild data.
+var currentProvider GuildProvider
 
 // getGuild
 // Return a Guild object corresponding to the given guildId
@@ -90,7 +103,7 @@ func getGuild(guildId string) *Guild {
 		// Add the new guild to the map of guilds
 		Guilds[guildId] = &newGuild
 
-		// Save the guild to .json
+		// Save the guild to database
 		// A failed save is fatal, so we can count on this being successful
 		newGuild.save()
 
@@ -99,6 +112,18 @@ func getGuild(guildId string) *Guild {
 
 		return &newGuild
 	}
+}
+
+// loadGuilds
+// Load all known guilds from the database
+func loadGuilds() map[string]*Guild {
+	return currentProvider.Load()
+}
+
+// save
+// saves guild data to the database
+func (g *Guild) save() {
+	currentProvider.Save(g)
 }
 
 // GetMember
@@ -674,7 +699,7 @@ func (g *Guild) EnableCommandInChannel(command string, channelId string) error {
 
 // DisableCommandInChannel
 // Given a command and channel ID, add that command to that channel's list of blocked commands
-func (g *Guild) DisableTriggerInChannel(command string, channelId string) error {
+func (g *Guild) DisableCommandInChannel(command string, channelId string) error {
 	cleanedId := CleanId(channelId)
 	if cleanedId == "" {
 		return errors.New("provided channel ID is invalid")
@@ -716,7 +741,7 @@ func (g *Guild) SetResponseChannel(channelId string) error {
 }
 
 // Kick
-// Kick a member
+// Kicks a member
 func (g *Guild) Kick(userId string, reason string) error {
 	// Make sure the member exists
 	member, err := g.GetMember(userId)
@@ -733,7 +758,7 @@ func (g *Guild) Kick(userId string, reason string) error {
 }
 
 // Ban
-// Ban a user, who may not be a member
+// Bans a user, who may not be a member
 func (g *Guild) Ban(userId string, reason string, deleteDays int) error {
 	// Make sure the USER exists, because they may not be a member
 	user, err := GetUser(userId)
