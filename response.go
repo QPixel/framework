@@ -330,7 +330,7 @@ func (r *Response) Send(success bool, title string, description string) {
 				GuildID:   r.Ctx.Guild.ID,
 			},
 			AllowedMentions: &discordgo.MessageAllowedMentions{
-				RepliedUser: false,
+				Parse: []discordgo.AllowedMentionType{},
 			},
 		})
 		if err != nil {
