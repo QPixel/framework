@@ -89,10 +89,10 @@ func CleanId(in string) string {
 }
 
 // ExtractCommand
-// Given a message, attempt to extract a command trigger and command arguments out of it
+// Given a message, attempt to extract a commands trigger and command arguments out of it
 // If there is no prefix, try using a bot mention as the prefix
 func ExtractCommand(guild *GuildInfo, message string) (*string, *string) {
-	// Check if the message starts with the bot trigger
+	// Check if the message starts with the bot prefix
 	if strings.HasPrefix(message, guild.Prefix) {
 		// Split the message on the prefix, but ensure only 2 fields are returned
 		// This ensures messages containing multiple instances of the prefix don't split multiple times

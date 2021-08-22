@@ -3,38 +3,29 @@ package framework
 import (
 	"errors"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 // guilds.go
-// This file contains the structure of a guild, and all of the functions used to store and retrieve guild information
+// This file contains the structure of a guild, and all the functions used to store and retrieve guild information
 
 // GuildInfo
-// This is all of the settings and data that needs to be stored about a single guild
+// This is all the settings and data that needs to be stored about a single guild
 type GuildInfo struct {
-	AddedDate                  int64                    `json:"addedDate"`                     // The date the bot was added to the server
-	Prefix                     string                   `json:"prefix"`                        // The bot prefix
-	GuildLanguage              string                   `json:"guildLanguage"`                 // Guilds default language todo make language per user
-	ModeratorIds               []string                 `json:"moderatorIds"`                  // The list of user/role IDs allowed to run mod-only commands
-	WhitelistIds               []string                 `json:"whitelistIds"`                  // List of user/role Ids that a user MUST have one of in order to run any commands, including public ones
-	IgnoredIds                 []string                 `json:"ignoredIds"`                    // List of user/role IDs that can never run commands, even public ones
-	WhitelistedChannels        []string                 `json:"whitelistedChannels"`           // List of channel IDs of whitelisted channels. If this list is non-empty, then only channels in this list can be used to invoke commands (unless the invoker is a bot moderator)
-	IgnoredChannels            []string                 `json:"ignoredChannels"`               // A list of channel IDs where commands will always be ignored, unless the user is a bot admin
-	BannedWordDetector         bool                     `json:"banned_word_detector"`          // Whether or not to detect banned words
-	GuildBannedWords           []string                 `json:"guild_banned_words"`            // List of banned words and phrases in this guild. Can use a command to update list.
-	BannedWordDetectorRoles    []string                 `json:"banned_word_detector_roles"`    // List of roles that the bot will not ignore
-	BannedWordDetectorChannels []string                 `json:"banned_word_detector_channels"` // List of channels that the bot will detect
-	GlobalDisabledTriggers     []string                 `json:"globalDisabledTriggers"`        // List of BotCommand triggers that can't be used anywhere in this guild
-	ChannelDisabledTriggers    map[string][]string      `json:"channelDisabledTriggers"`       // List of channel IDs and the list of triggers that can't be used in it
-	CustomCommands             map[string]CustomCommand `json:"customCommands"`                // The list of triggers and their corresponding outputs for custom commands
-	DeletePolicy               bool                     `json:"deletePolicy"`                  // Whether or not to delete BotCommand messages after a user sends them
-	ResponseChannelId          string                   `json:"responseChannelId"`             // The channelID of the channel to use for responses by default
-	MuteRoleId                 string                   `json:"muteRoleId"`                    // The role ID of the Mute role
-	MutedUsers                 map[string]int64         `json:"mutedUsers"`                    // The list of muted users, and the Unix timestamp of when their mute expired
-	Storage                    map[string]interface{}   `json:"storage"`                       // Generic storage available to store anything not specific to the core bot
+	AddedDate               int64                  `json:"added_date"`
+	ChannelDisabledCommands map[string][]string    `json:"channel_disabled_commands"`
+	DeletePolicy            bool                   `json:"delete_policy"`
+	GlobalDisabledCommands  []string               `json:"global_disabled_commands"`
+	IgnoredChannels         []string               `json:"ignored_channels"`
+	IgnoredIds              []string               `json:"ignored_ids"`
+	ModeratorIds            []string               `json:"moderator_ids"`
+	Prefix                  string                 `json:"prefix,"`
+	ResponseChannelId       string                 `json:"response_channel_id"`
+	Storage                 map[string]interface{} `json:"storage"`
+	WhitelistedChannels     []string               `json:"whitelisted_channels"`
+	WhitelistIds            []string               `json:"whitelist_ids"`
 }
 
 // Guild
@@ -50,10 +41,6 @@ type Guild struct {
 // Otherwise, there will be information desync
 var Guilds = make(map[string]*Guild)
 
-// muteLock
-// A map to store mutexes for handling mutes for a server synchronously
-var muteLock = make(map[string]*sync.Mutex)
-
 // getGuild
 // Return a Guild object corresponding to the given guildId
 // If the guild doesn't exist, initialize a new guild and save it before returning
@@ -64,23 +51,18 @@ func getGuild(guildId string) *Guild {
 		return &Guild{
 			ID: "",
 			Info: GuildInfo{
-				AddedDate:                  time.Now().Unix(),
-				Prefix:                     "!",
-				DeletePolicy:               false,
-				GuildLanguage:              "en",
-				ResponseChannelId:          "",
-				MuteRoleId:                 "",
-				GlobalDisabledTriggers:     nil,
-				ChannelDisabledTriggers:    make(map[string][]string),
-				CustomCommands:             make(map[string]CustomCommand),
-				ModeratorIds:               nil,
-				IgnoredIds:                 nil,
-				BannedWordDetector:         false,
-				GuildBannedWords:           nil,
-				BannedWordDetectorRoles:    nil,
-				BannedWordDetectorChannels: nil,
-				MutedUsers:                 make(map[string]int64),
-				Storage:                    make(map[string]interface{}),
+				AddedDate:               time.Now().Unix(),
+				ChannelDisabledCommands: nil,
+				DeletePolicy:            false,
+				GlobalDisabledCommands:  nil,
+				IgnoredChannels:         nil,
+				IgnoredIds:              nil,
+				ModeratorIds:            nil,
+				Prefix:                  "!",
+				ResponseChannelId:       "",
+				Storage:                 make(map[string]interface{}),
+				WhitelistedChannels:     nil,
+				WhitelistIds:            nil,
 			},
 		}
 	}
@@ -91,23 +73,18 @@ func getGuild(guildId string) *Guild {
 		newGuild := Guild{
 			ID: guildId,
 			Info: GuildInfo{
-				AddedDate:                  time.Now().Unix(),
-				Prefix:                     "!",
-				DeletePolicy:               false,
-				GuildLanguage:              "en",
-				ResponseChannelId:          "",
-				MuteRoleId:                 "",
-				GlobalDisabledTriggers:     nil,
-				ChannelDisabledTriggers:    make(map[string][]string),
-				CustomCommands:             make(map[string]CustomCommand),
-				ModeratorIds:               nil,
-				IgnoredIds:                 nil,
-				BannedWordDetector:         false,
-				GuildBannedWords:           nil,
-				BannedWordDetectorRoles:    nil,
-				BannedWordDetectorChannels: nil,
-				MutedUsers:                 make(map[string]int64),
-				Storage:                    make(map[string]interface{}),
+				AddedDate:               time.Now().Unix(),
+				ChannelDisabledCommands: nil,
+				DeletePolicy:            false,
+				GlobalDisabledCommands:  nil,
+				IgnoredChannels:         nil,
+				IgnoredIds:              nil,
+				ModeratorIds:            nil,
+				Prefix:                  "!",
+				ResponseChannelId:       "",
+				Storage:                 make(map[string]interface{}),
+				WhitelistedChannels:     nil,
+				WhitelistIds:            nil,
 			},
 		}
 		// Add the new guild to the map of guilds
@@ -277,13 +254,6 @@ func (g *Guild) MemberOrRoleInList(checkId string, list []string) bool {
 // Set the prefix, then save the guild data
 func (g *Guild) SetPrefix(newPrefix string) {
 	g.Info.Prefix = newPrefix
-	g.save()
-}
-
-// SetLang
-// Set the prefix, then save the guild data
-func (g *Guild) SetLang(lang string) {
-	g.Info.GuildLanguage = lang
 	g.save()
 }
 
@@ -611,9 +581,9 @@ func (g *Guild) RemoveChannelFromIgnored(channelId string) error {
 }
 
 // IsGloballyDisabled
-// Check if a given trigger is globally disabled
+// Check if a given command is globally disabled
 func (g *Guild) IsGloballyDisabled(trigger string) bool {
-	for _, disabled := range g.Info.GlobalDisabledTriggers {
+	for _, disabled := range g.Info.GlobalDisabledCommands {
 		if strings.ToLower(disabled) == strings.ToLower(trigger) {
 			return true
 		}
@@ -622,33 +592,33 @@ func (g *Guild) IsGloballyDisabled(trigger string) bool {
 	return false
 }
 
-// EnableTriggerGlobally
-// Remove a trigger from the list of *globally disabled* triggers
-func (g *Guild) EnableTriggerGlobally(trigger string) error {
+// EnableCommandGlobally
+// Remove a command from the list of *globally disabled* triggers
+func (g *Guild) EnableCommandGlobally(trigger string) error {
 	if !g.IsGloballyDisabled(trigger) {
 		return errors.New("trigger is not disabled; nothing to enable")
 	}
 
-	g.Info.GlobalDisabledTriggers = RemoveItem(g.Info.GlobalDisabledTriggers, trigger)
+	g.Info.GlobalDisabledCommands = RemoveItem(g.Info.GlobalDisabledCommands, trigger)
 	g.save()
 	return nil
 }
 
-// DisableTriggerGlobally
-// Add a trigger to the list of *globally disabled* triggers
-func (g *Guild) DisableTriggerGlobally(trigger string) error {
-	if g.IsGloballyDisabled(trigger) {
-		return errors.New("trigger is not enabled; nothing to disable")
+// DisableCommandGlobally
+// Add a command to the list of *globally disabled* commands
+func (g *Guild) DisableCommandGlobally(command string) error {
+	if g.IsGloballyDisabled(command) {
+		return errors.New("command is not enabled; nothing to disable")
 	}
 
-	g.Info.GlobalDisabledTriggers = append(g.Info.GlobalDisabledTriggers, trigger)
+	g.Info.GlobalDisabledCommands = append(g.Info.GlobalDisabledCommands, command)
 	g.save()
 	return nil
 }
 
-// TriggerIsDisabledInChannel
-// Check if a given trigger is disabled in the given channel
-func (g *Guild) TriggerIsDisabledInChannel(trigger string, channelId string) bool {
+// CommandIsDisabledInChannel
+// Check if a given command is disabled in the given channel
+func (g *Guild) CommandIsDisabledInChannel(command string, channelId string) bool {
 	cleanedId := CleanId(channelId)
 	if cleanedId == "" {
 		return true
@@ -659,16 +629,16 @@ func (g *Guild) TriggerIsDisabledInChannel(trigger string, channelId string) boo
 	}
 
 	// Iterate over every channel ID (the map key) and their internal list of disabled triggers
-	for channel, triggers := range g.Info.ChannelDisabledTriggers {
+	for channel, commands := range g.Info.ChannelDisabledCommands {
 
 		// If the channel matches our current channel, continue
 		if channel == cleanedId {
 
 			// For every disabled trigger in the list...
-			for _, disabled := range triggers {
+			for _, disabled := range commands {
 
 				// If the current trigger matches a disabled one, return true
-				if disabled == trigger {
+				if disabled == command {
 					return true
 				}
 			}
@@ -678,83 +648,43 @@ func (g *Guild) TriggerIsDisabledInChannel(trigger string, channelId string) boo
 	return false
 }
 
-// EnableTriggerInChannel
-// Given a trigger and channel ID, remove that trigger from that channel's list of blocked triggers
-func (g *Guild) EnableTriggerInChannel(trigger string, channelId string) error {
+// EnableCommandInChannel
+// Given a command and channel ID, remove that command from that channel's list of blocked comamnds
+func (g *Guild) EnableCommandInChannel(command string, channelId string) error {
 	cleanedId := CleanId(channelId)
 	if cleanedId == "" {
 		return errors.New("provided channel ID is invalid")
 	}
 
-	if !g.TriggerIsDisabledInChannel(trigger, cleanedId) {
-		return errors.New("that trigger is not disabled in this channel; nothing to enable")
+	if !g.CommandIsDisabledInChannel(command, cleanedId) {
+		return errors.New("that command is not disabled in this channel; nothing to enable")
 	}
 
 	// Remove the trigger from THIS channel's list
-	g.Info.ChannelDisabledTriggers[cleanedId] = RemoveItem(g.Info.ChannelDisabledTriggers[cleanedId], trigger)
+	g.Info.ChannelDisabledCommands[cleanedId] = RemoveItem(g.Info.ChannelDisabledCommands[cleanedId], command)
 
 	// If there are no more items, delete the entire channel list, otherwise it will appear as null in the json
-	if len(g.Info.ChannelDisabledTriggers[cleanedId]) == 0 {
-		delete(g.Info.ChannelDisabledTriggers, cleanedId)
+	if len(g.Info.ChannelDisabledCommands[cleanedId]) == 0 {
+		delete(g.Info.ChannelDisabledCommands, cleanedId)
 	}
 
 	g.save()
 	return nil
 }
 
-// DisableTriggerInChannel
-// Given a trigger and channel ID, add that trigger to that channel's list of blocked triggers
-func (g *Guild) DisableTriggerInChannel(trigger string, channelId string) error {
+// DisableCommandInChannel
+// Given a command and channel ID, add that command to that channel's list of blocked commands
+func (g *Guild) DisableTriggerInChannel(command string, channelId string) error {
 	cleanedId := CleanId(channelId)
 	if cleanedId == "" {
 		return errors.New("provided channel ID is invalid")
 	}
 
-	if g.TriggerIsDisabledInChannel(trigger, cleanedId) {
+	if g.CommandIsDisabledInChannel(command, cleanedId) {
 		return errors.New("that trigger is already disabled in this channel; nothing to disable")
 	}
 
-	g.Info.ChannelDisabledTriggers[cleanedId] = append(g.Info.ChannelDisabledTriggers[cleanedId], trigger)
-	g.save()
-	return nil
-}
-
-// IsCustomCommand
-// Check if a given trigger is a custom command in this guild
-func (g *Guild) IsCustomCommand(trigger string) bool {
-	if _, ok := g.Info.CustomCommands[strings.ToLower(trigger)]; ok {
-		return true
-	}
-	return false
-}
-
-// AddCustomCommand
-// Add a custom command to this guild
-func (g *Guild) AddCustomCommand(trigger string, content string, public bool) error {
-	if g.IsCustomCommand(trigger) {
-		return errors.New("the provided trigger is already a custom command")
-	}
-
-	if _, ok := commands[trigger]; ok {
-		return errors.New("custom command would have overridden a core command")
-	}
-
-	g.Info.CustomCommands[trigger] = CustomCommand{
-		Content:     content,
-		InvokeCount: 0,
-		Public:      public,
-	}
-	g.save()
-	return nil
-}
-
-// RemoveCustomCommand
-// Remove a custom command from this guild
-func (g *Guild) RemoveCustomCommand(trigger string) error {
-	if !g.IsCustomCommand(trigger) {
-		return errors.New("the provided trigger is not a custom command")
-	}
-	delete(g.Info.CustomCommands, trigger)
+	g.Info.ChannelDisabledCommands[cleanedId] = append(g.Info.ChannelDisabledCommands[cleanedId], command)
 	g.save()
 	return nil
 }
@@ -782,116 +712,6 @@ func (g *Guild) SetResponseChannel(channelId string) error {
 	}
 	g.Info.ResponseChannelId = channel.ID
 	g.save()
-	return nil
-}
-
-// SetMuteRole
-// Set the role ID to use for issuing mutes, then save the guild data
-func (g *Guild) SetMuteRole(roleId string) error {
-	// Try grabbing the role first (we don't use IsRole since we need the real ID)
-	role, err := g.GetRole(roleId)
-	if err != nil {
-		return err
-	}
-	g.Info.MuteRoleId = role.ID
-	g.save()
-	return nil
-}
-
-// HasMuteRecord
-// Check if a member with a given ID has a mute record
-// To check if they are actually muted, use g.HasRole
-func (g *Guild) HasMuteRecord(userId string) bool {
-	// Check if the member exists
-	member, err := g.GetMember(userId)
-	if err != nil {
-		return false
-	}
-
-	// Check if the member is in the list of mutes
-	if _, ok := g.Info.MutedUsers[member.User.ID]; ok {
-		return true
-	}
-
-	return false
-}
-
-// Mute
-// Mute a user for the specified duration, apply the mute role, and write a mute record to the guild info
-func (g *Guild) Mute(userId string, duration int64) error {
-	// Make sure the mute role exists
-	muteRole, err := g.GetRole(g.Info.MuteRoleId)
-	if err != nil {
-		return err
-	}
-
-	// Make sure the member exists
-	member, err := g.GetMember(userId)
-	if err != nil {
-		return err
-	}
-
-	// Create a mute mutex for this guild if it does not exist
-	if _, ok := muteLock[g.ID]; !ok {
-		muteLock[g.ID] = &sync.Mutex{}
-	}
-
-	// Lock this guild's mute activity so there is no desync
-	defer muteLock[g.ID].Unlock()
-	muteLock[g.ID].Lock()
-
-	// Try muting the member
-	err = Session.GuildMemberRoleAdd(g.ID, member.User.ID, muteRole.ID)
-	if err != nil {
-		return err
-	}
-
-	// If the duration is not 0 (indefinite mute), add the current time to the duration
-	if duration != 0 {
-		duration += time.Now().Unix()
-	}
-
-	// Record this mute record
-	g.Info.MutedUsers[member.User.ID] = duration
-	g.save()
-
-	return nil
-}
-
-// UnMute
-// Unmute a user; expiry checks will not be done here, this is a direct unmute
-func (g *Guild) UnMute(userId string) error {
-	// Make sure the mute role exists
-	muteRole, err := g.GetRole(g.Info.MuteRoleId)
-	if err != nil {
-		return err
-	}
-
-	// Make sure the member exists
-	member, err := g.GetMember(userId)
-	if err != nil {
-		return err
-	}
-
-	// Create a mute mutex for this guild if it does not exist
-	if _, ok := muteLock[g.ID]; !ok {
-		muteLock[g.ID] = &sync.Mutex{}
-	}
-
-	// Lock this guild's mute activity so there is no desync
-	defer muteLock[g.ID].Unlock()
-	muteLock[g.ID].Lock()
-
-	// Delete the mute record if it exists
-	delete(g.Info.MutedUsers, member.User.ID)
-	g.save()
-
-	// Try unmuting the user
-	err = Session.GuildMemberRoleRemove(g.ID, member.User.ID, muteRole.ID)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -1132,109 +952,4 @@ func (g *Guild) GetCommandUsage(cmd CommandInfo) string {
 		cnt++
 	}
 	return "```\n" + output + "\n```"
-}
-
-// IsSniperEnabled
-// Checks to see if the sniper module is enabled
-func (g *Guild) IsSniperEnabled() bool {
-	return g.Info.BannedWordDetector
-}
-
-// IsSnipeable
-// Checks to see if the sniper module can snipe this role
-func (g *Guild) IsSnipeable(authorID string) bool {
-	if Session.State.Ready.User != nil && authorID == Session.State.Ready.User.ID {
-		return false
-	}
-	if g.MemberOrRoleInList(authorID, g.Info.BannedWordDetectorRoles) {
-		return false
-	}
-	return true
-}
-
-// IsSniperChannel
-// Checks to see if the channel is in the channel list
-func (g *Guild) IsSniperChannel(channelID string) bool {
-	for _, id := range g.Info.BannedWordDetectorChannels {
-		if id == channelID {
-			return true
-		}
-	}
-	return false
-}
-
-// SetSniper
-// Sets the state of the sniper
-func (g *Guild) SetSniper(value bool) bool {
-	g.Info.BannedWordDetector = value
-	g.save()
-	return value
-}
-
-// BulkAddWords
-// Allows you to bulk add words to the banned word detector
-func (g *Guild) BulkAddWords(words []string) []string {
-	g.Info.GuildBannedWords = append(g.Info.GuildBannedWords, words...)
-	g.save()
-	return g.Info.GuildBannedWords
-}
-
-// AddWord
-// Allows you to add a word to the banned word detector
-func (g *Guild) AddWord(word string) []string {
-	g.Info.GuildBannedWords = append(g.Info.GuildBannedWords, word)
-	g.save()
-	return g.Info.GuildBannedWords
-}
-
-// RemoveWord
-// Allows you to remove a word from the banned word detector
-func (g *Guild) RemoveWord(word string) []string {
-	g.Info.GuildBannedWords = RemoveItem(g.Info.GuildBannedWords, word)
-	g.save()
-	return g.Info.GuildBannedWords
-}
-
-// SetSniperRole
-// Allows you to add a role to the sniper
-func (g *Guild) SetSniperRole(roleID string) []string {
-	if g.IsRole(roleID) {
-		g.Info.BannedWordDetectorRoles = append(g.Info.BannedWordDetectorRoles, roleID)
-		g.save()
-		return g.Info.BannedWordDetectorRoles
-	}
-	return g.Info.BannedWordDetectorRoles
-}
-
-// SetSniperChannel
-// Allows you to add a channel to the sniper
-func (g *Guild) SetSniperChannel(channelID string) []string {
-	if g.IsChannel(channelID) {
-		g.Info.BannedWordDetectorChannels = append(g.Info.BannedWordDetectorChannels, channelID)
-		g.save()
-		return g.Info.BannedWordDetectorChannels
-	}
-	return g.Info.BannedWordDetectorChannels
-}
-
-// UnsetSniperRole
-// Allows you to remove a role from the sniper
-func (g *Guild) UnsetSniperRole(roleID string) []string {
-	if g.IsRole(roleID) {
-		g.Info.BannedWordDetectorRoles = RemoveItem(g.Info.BannedWordDetectorRoles, roleID)
-		g.save()
-		return g.Info.BannedWordDetectorRoles
-	}
-	return g.Info.BannedWordDetectorRoles
-}
-
-// UnsetSniperChannel
-// Allows you to remove a channel from the sniper
-func (g *Guild) UnsetSniperChannel(channelID string) []string {
-	if g.IsChannel(channelID) {
-		g.Info.BannedWordDetectorChannels = RemoveItem(g.Info.BannedWordDetectorChannels, channelID)
-		g.save()
-		return g.Info.BannedWordDetectorChannels
-	}
-	return g.Info.BannedWordDetectorChannels
 }

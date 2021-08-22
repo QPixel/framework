@@ -12,7 +12,8 @@ import (
 // commands.go
 // This file contains everything required to add core commands to the bot, and parse commands from a message
 
-// GroupTypes
+// Group
+// Defines different "groups" of commands for ordering in a help command
 type Group string
 
 var (
@@ -61,14 +62,6 @@ type Command struct {
 // ChildCommand
 // Defines how child commands are stored
 type ChildCommand map[string]map[string]Command
-
-// CustomCommand
-// A type that defines a custom command
-type CustomCommand struct {
-	Content     string // The content of the custom command. Custom commands are just special strings after all
-	InvokeCount int64  // How many times the command has been invoked; int64 for easier use with json
-	Public      bool   // Whether non-admins and non-mods can use this command
-}
 
 // commands
 // All the registered core commands (not custom commands)
@@ -174,12 +167,6 @@ func GetCommands() map[string]CommandInfo {
 	return list
 }
 
-// customCommandHandler
-// Given a custom command, interpret and run it
-func customCommandHandler(command CustomCommand, args []string, message *discordgo.Message) {
-	//TODO
-}
-
 // commandHandler
 // This handler will be added to a *discordgo.Session, and will scan an incoming messages for commands to run
 func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate) {
@@ -202,14 +189,6 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 	if trigger == nil {
 		return
 	}
-	isCustom := false
-	if _, ok := commands[commandAliases[*trigger]]; !ok {
-		if !g.IsCustomCommand(*trigger) {
-			return
-		} else {
-			isCustom = true
-		}
-	}
 	// Only do further checks if the user is not a bot admin
 	if !IsAdmin(message.Author.ID) {
 		// Ignore the command if it is globally disabled
@@ -217,8 +196,8 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 			return
 		}
 
-		// Ignore the command if this channel has blocked the trigger
-		if g.TriggerIsDisabledInChannel(*trigger, message.ChannelID) {
+		// Ignore the command if this channel has blocked the command
+		if g.CommandIsDisabledInChannel(*trigger, message.ChannelID) {
 			return
 		}
 
@@ -233,54 +212,49 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 		}
 	}
 
-	if !isCustom {
-		//Get the command to run
-		// Error Checking
-		command, ok := commands[commandAliases[*trigger]]
-		if !ok {
-			log.Errorf("Command was not found")
-			if IsAdmin(message.Author.ID) {
-				Session.MessageReactionAdd(message.ChannelID, message.ID, "<:redtick:861413502991073281>")
-				Session.ChannelMessageSendReply(message.ChannelID, "<:redtick:861413502991073281> Error! Command not found!", message.MessageReference)
-			}
-			return
-		}
-		// Check if the command is public, or if the current user is a bot moderator
-		// Bot admins supercede both checks
-		if IsAdmin(message.Author.ID) || command.Info.Public || g.IsMod(message.Author.ID) {
-			// Run the command with the necessary context
-			if command.Info.IsTyping && g.Info.ResponseChannelId == "" {
-				_ = Session.ChannelTyping(message.ChannelID)
-			}
-			// The command is valid, so now we need to delete the invoking message if that is configured
-			if g.Info.DeletePolicy {
-				err := Session.ChannelMessageDelete(message.ChannelID, message.ID)
-				if err != nil {
-					SendErrorReport(message.GuildID, message.ChannelID, message.Author.ID, "Failed to delete message: "+message.ID, err)
-				}
-			}
-
-			defer handleCommandError(g.ID, channel.ID, message.Author.ID)
-			if command.Info.IsParent {
-				handleChildCommand(*argString, command, message.Message, g)
-				return
-			}
-			command.Function(&Context{
-				Guild:   g,
-				Cmd:     command.Info,
-				Args:    *ParseArguments(*argString, command.Info.Arguments),
-				Message: message.Message,
-			})
-			// Makes sure that variables ran in ParseArguments are gone.
-			if commandsGC == 25 && commandsGC > 25 {
-				debug.FreeOSMemory()
-				commandsGC = 0
-			} else {
-				commandsGC++
-			}
-			return
-		}
+	//Get the command to run
+	// Error Checking
+	command, ok := commands[commandAliases[*trigger]]
+	if !ok {
+		log.Errorf("Command was not found")
+		return
 	}
+	// Check if the command is public, or if the current user is a bot moderator
+	// Bot admins supercede both checks
+	if IsAdmin(message.Author.ID) || command.Info.Public || g.IsMod(message.Author.ID) {
+		// Run the command with the necessary context
+		if command.Info.IsTyping && g.Info.ResponseChannelId == "" {
+			_ = Session.ChannelTyping(message.ChannelID)
+		}
+		// The command is valid, so now we need to delete the invoking message if that is configured
+		if g.Info.DeletePolicy {
+			err := Session.ChannelMessageDelete(message.ChannelID, message.ID)
+			if err != nil {
+				SendErrorReport(message.GuildID, message.ChannelID, message.Author.ID, "Failed to delete message: "+message.ID, err)
+			}
+		}
+
+		defer handleCommandError(g.ID, channel.ID, message.Author.ID)
+		if command.Info.IsParent {
+			handleChildCommand(*argString, command, message.Message, g)
+			return
+		}
+		command.Function(&Context{
+			Guild:   g,
+			Cmd:     command.Info,
+			Args:    *ParseArguments(*argString, command.Info.Arguments),
+			Message: message.Message,
+		})
+		// Makes sure that variables ran in ParseArguments are gone.
+		if commandsGC == 25 && commandsGC > 25 {
+			debug.FreeOSMemory()
+			commandsGC = 0
+		} else {
+			commandsGC++
+		}
+		return
+	}
+
 }
 
 // -- Helper Methods

@@ -117,8 +117,8 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 			return
 		}
 
-		// Ignore the command if this channel has blocked the trigger
-		if g.TriggerIsDisabledInChannel(trigger, i.ChannelID) {
+		// Ignore the command if this channel has blocked the command
+		if g.CommandIsDisabledInChannel(trigger, i.ChannelID) {
 			ErrorResponse(i.Interaction, "Command is disabled in this channel!", trigger)
 			return
 		}

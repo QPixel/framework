@@ -1,11 +1,11 @@
-//go:build darwin || linux
-// +build darwin linux
+//go:build windows
+// +build windows
 
 package framework
 
 import (
 	"encoding/json"
-	"golang.org/x/sys/unix"
+	"golang.org/x/sys/windows"
 	"io/ioutil"
 	"os"
 	"path"
@@ -18,7 +18,7 @@ import (
 
 // GuildsDir
 // The directory to use for reading and writing guild .json files. Defaults to ./guilds
-// todo remind me to abstract this into a database
+// todo abstract this into a database module (being completed in feature/database)
 var GuildsDir = ""
 
 // saveLock
@@ -72,12 +72,14 @@ func loadGuilds() {
 
 		// Even though we are reading files, we need to make sure we can write to this file later
 		fPath := path.Join(GuildsDir, fName)
-		err := unix.Access(fPath, unix.O_RDWR)
+		fd, err := windows.Open(fPath, windows.O_RDWR, 0)
 		if err != nil {
 			log.Errorf("File \"%s\" is not writable; guild %s WILL NOT be loaded! (%s)", fPath, guildId, err)
+			windows.Close(fd)
 			continue
 		}
-
+		// Close file handle since we are not writing to it.
+		windows.Close(fd)
 		// Try reading the file
 		jsonBytes, err := ioutil.ReadFile(fPath)
 		if err != nil {
