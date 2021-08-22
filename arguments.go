@@ -269,6 +269,9 @@ func findAllOptionArgs(argString []string, keys []string, infoArgs *orderedmap.O
 			continue
 		}
 		vv := iA.(*ArgInfo)
+		if vv.Match == ArgContent {
+			return *args, true, argString, keys
+		}
 		if vv.Required {
 			if vv.TypeGuard != String {
 				var value string

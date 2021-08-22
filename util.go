@@ -35,7 +35,7 @@ func RemoveItems(slice []string, indexes []int) []string {
 	}
 	copy(newSlice, slice)
 	for _, v := range indexes {
-		if len(newSlice) > v+1 && v != 0 {
+		if len(newSlice) < v+1 && v != 0 {
 			v = v - 1
 		}
 		//newSlice[v] = newSlice[len(newSlice)-1]
