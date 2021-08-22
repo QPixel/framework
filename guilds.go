@@ -261,7 +261,7 @@ func (g *Guild) MemberOrRoleInList(checkId string, list []string) bool {
 
 	// Check if the ID represents a role
 	role, err := g.GetRole(checkId)
-	log.Infof("Role %s", role)
+
 	if err == nil {
 		// This is a role; check if this role is in the list
 		for _, mod := range list {
