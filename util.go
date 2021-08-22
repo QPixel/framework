@@ -6,6 +6,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/dlclark/regexp2"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -354,4 +355,27 @@ func FindAllString(re *regexp2.Regexp, s string) []string {
 		m, _ = re.FindNextMatch(m)
 	}
 	return matches
+}
+
+// dgoLog
+// Allows for discordgo to call tinylog
+func dgoLog(msgL, caller int, format string, a ...interface{}) {
+	pc, file, line, _ := runtime.Caller(caller)
+	files := strings.Split(file, "/")
+	file = files[len(files)-1]
+
+	name := runtime.FuncForPC(pc).Name()
+	fns := strings.Split(name, ".")
+	name = fns[len(fns)-1]
+	msg := fmt.Sprintf(format, a...)
+	switch msgL {
+	case discordgo.LogError:
+		dlog.Errorf("%s:%d:%s() %s", file, line, name, msg)
+	case discordgo.LogWarning:
+		dlog.Warningf("%s:%d:%s() %s", file, line, name, msg)
+	case discordgo.LogInformational:
+		dlog.Infof("%s:%d:%s() %s", file, line, name, msg)
+	case discordgo.LogDebug:
+		dlog.Debugf("%s:%d:%s() %s", file, line, name, msg)
+	}
 }

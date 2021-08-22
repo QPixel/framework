@@ -1,12 +1,10 @@
 package framework
 
 import (
-	"fmt"
 	"github.com/bwmarrin/discordgo"
 	tlog "github.com/ubergeek77/tinylog"
 	"os"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,9 +13,9 @@ import (
 // core.go
 // This file contains the main code responsible for driving core bot functionality
 
-// messageState
+// MessageState
 // Tells discordgo the amount of messages to cache
-var messageState = 500
+var MessageState = 500
 
 // log
 // The logger for the core bot
@@ -56,7 +54,19 @@ var ColorSuccess = 0x55F485
 var ColorFailure = 0xF45555
 
 // BotPresence
+// Presence data to send when the bot is logging in
 var botPresence discordgo.GatewayStatusUpdate
+
+// initProvider
+// Stores and allows for the calling of the chosen GuildProvider
+var initProvider func() GuildProvider
+
+// SetInitProvider
+// Sets the init provider
+func SetInitProvider(provider func() GuildProvider) {
+	initProvider = provider
+	return
+}
 
 // SetPresence
 // Sets the gateway field for bot presence
@@ -99,33 +109,15 @@ func IsCommand(trigger string) bool {
 	return false
 }
 
-// dgoLog
-// Allows for discordgo to call tinylog
-func dgoLog(msgL, caller int, format string, a ...interface{}) {
-	pc, file, line, _ := runtime.Caller(caller)
-	files := strings.Split(file, "/")
-	file = files[len(files)-1]
-
-	name := runtime.FuncForPC(pc).Name()
-	fns := strings.Split(name, ".")
-	name = fns[len(fns)-1]
-	msg := fmt.Sprintf(format, a...)
-	switch msgL {
-	case discordgo.LogError:
-		dlog.Errorf("%s:%d:%s() %s", file, line, name, msg)
-	case discordgo.LogWarning:
-		dlog.Warningf("%s:%d:%s() %s", file, line, name, msg)
-	case discordgo.LogInformational:
-		dlog.Infof("%s:%d:%s() %s", file, line, name, msg)
-	case discordgo.LogDebug:
-		dlog.Debugf("%s:%d:%s() %s", file, line, name, msg)
-	}
-}
-
 // Start the bot.
 func Start() {
 	discordgo.Logger = dgoLog
+
 	// Load all the guilds
+	if initProvider == nil {
+		log.Fatalf("You have not chosen a database provider. Please refer to the docs")
+	}
+	CurrentProvider = initProvider()
 	loadGuilds()
 
 	// We need a token
@@ -141,12 +133,14 @@ func Start() {
 		log.Fatalf("Failed to create Discord session: %s", err)
 	}
 	// Setup State specific variables
-	Session.State.MaxMessageCount = messageState
+	Session.State.MaxMessageCount = MessageState
 	Session.LogLevel = discordgo.LogWarning
 	Session.SyncEvents = false
 	Session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
+
 	// Set the bots status
 	Session.Identify.Presence = botPresence
+
 	// Open the session
 	log.Info("Connecting to Discord...")
 	err = Session.Open()

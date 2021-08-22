@@ -28,6 +28,14 @@ type GuildInfo struct {
 	WhitelistIds            []string               `json:"whitelist_ids"`
 }
 
+//GuildProvider
+// Type that holds functions that can be easily modified to support a wide range
+// of storage types
+type GuildProvider struct {
+	Save func(guild *Guild)
+	Load func()
+}
+
 // Guild
 // The definition of a guild, which is simply its ID and Info
 type Guild struct {
@@ -40,6 +48,11 @@ type Guild struct {
 // We store pointers to the guilds, so that only one guild object is maintained across all contexts
 // Otherwise, there will be information desync
 var Guilds = make(map[string]*Guild)
+
+// CurrentProvider
+// A reference to a function that provides the guild info system with a database
+// Or similar system to save guild data.
+var CurrentProvider GuildProvider
 
 // getGuild
 // Return a Guild object corresponding to the given guildId
@@ -90,7 +103,7 @@ func getGuild(guildId string) *Guild {
 		// Add the new guild to the map of guilds
 		Guilds[guildId] = &newGuild
 
-		// Save the guild to .json
+		// Save the guild to database
 		// A failed save is fatal, so we can count on this being successful
 		newGuild.save()
 
@@ -99,6 +112,18 @@ func getGuild(guildId string) *Guild {
 
 		return &newGuild
 	}
+}
+
+// loadGuilds
+// Load all known guilds from the database
+func loadGuilds() {
+	CurrentProvider.Load()
+}
+
+// save
+// saves guild data to the database
+func (g *Guild) save() {
+	CurrentProvider.Save(g)
 }
 
 // GetMember
