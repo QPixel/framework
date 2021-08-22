@@ -32,7 +32,7 @@ var saveLock = make(map[string]*sync.Mutex)
 
 // loadGuilds
 // Load all known guilds from the filesystem, from inside GuildsDir
-func loadGuilds() {
+func loadGuilds() (guilds map[string]*framework.Guild) {
 	// Check if the configured guild directory exists, and create it if otherwise
 	if _, existErr := os.Stat(GuildsDir); os.IsNotExist(existErr) {
 		mkErr := os.MkdirAll(GuildsDir, 0755)
@@ -42,10 +42,11 @@ func loadGuilds() {
 		log.Warningf("There are no Guilds to load; data for new Guilds will be saved to: %s", GuildsDir)
 
 		// There are no guilds to load, so we can return early
-		return
+		return guilds
 	}
 
 	// Get a list of files in the directory
+	guilds = make(map[string]*framework.Guild)
 	files, rdErr := ioutil.ReadDir(GuildsDir)
 	if rdErr != nil {
 		log.Fatalf("Failed to read guild directory: %s", rdErr)
@@ -98,15 +99,15 @@ func loadGuilds() {
 		}
 
 		// Add the loaded guild to the map
-		framework.Guilds[guildId] = &framework.Guild{
+		guilds[guildId] = &framework.Guild{
 			ID:   guildId,
 			Info: gInfo,
 		}
 	}
 
-	if len(framework.Guilds) == 0 {
+	if len(guilds) == 0 {
 		log.Warningf("There are no guilds to load; data for new guilds will be saved to \"%s\"", GuildsDir)
-		return
+		return guilds
 	}
 
 	// :)
@@ -115,7 +116,8 @@ func loadGuilds() {
 		plural = "s"
 	}
 
-	log.Infof("Loaded %d guild%s", len(framework.Guilds), plural)
+	log.Infof("Loaded %d guild%s", len(guilds), plural)
+	return guilds
 }
 
 // save

@@ -117,8 +117,8 @@ func Start() {
 	if initProvider == nil {
 		log.Fatalf("You have not chosen a database provider. Please refer to the docs")
 	}
-	CurrentProvider = initProvider()
-	loadGuilds()
+	currentProvider = initProvider()
+	Guilds = loadGuilds()
 
 	// We need a token
 	if botToken == "" {

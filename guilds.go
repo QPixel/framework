@@ -33,7 +33,7 @@ type GuildInfo struct {
 // of storage types
 type GuildProvider struct {
 	Save func(guild *Guild)
-	Load func()
+	Load func() map[string]*Guild
 }
 
 // Guild
@@ -49,10 +49,10 @@ type Guild struct {
 // Otherwise, there will be information desync
 var Guilds = make(map[string]*Guild)
 
-// CurrentProvider
+// currentProvider
 // A reference to a function that provides the guild info system with a database
 // Or similar system to save guild data.
-var CurrentProvider GuildProvider
+var currentProvider GuildProvider
 
 // getGuild
 // Return a Guild object corresponding to the given guildId
@@ -116,14 +116,14 @@ func getGuild(guildId string) *Guild {
 
 // loadGuilds
 // Load all known guilds from the database
-func loadGuilds() {
-	CurrentProvider.Load()
+func loadGuilds() map[string]*Guild {
+	return currentProvider.Load()
 }
 
 // save
 // saves guild data to the database
 func (g *Guild) save() {
-	CurrentProvider.Save(g)
+	currentProvider.Save(g)
 }
 
 // GetMember
