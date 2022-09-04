@@ -1,8 +1,9 @@
 package framework
 
 import (
-	"github.com/bwmarrin/discordgo"
 	"runtime"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 // -- Types and Structs --
@@ -20,6 +21,8 @@ var slashCommandTypes = map[ArgTypeGuards]discordgo.ApplicationCommandOptionType
 	//SubCmd:    discordgo.ApplicationCommandOptionSubCommand,
 	//SubCmdGrp: discordgo.ApplicationCommandOptionSubCommandGroup,
 }
+
+var genericError = "error executing command"
 
 // getSlashCommandStruct
 // Creates a slash command struct
@@ -229,8 +232,8 @@ func handleSlashCommandError(i discordgo.Interaction) {
 		log.Warningf("Recovering from panic: %s", r)
 		log.Warningf("Sending Error report to admins")
 		SendErrorReport(i.GuildID, i.ChannelID, i.Member.User.ID, "Error!", r.(runtime.Error))
-		message, err := Session.InteractionResponseEdit(Session.State.User.ID, &i, &discordgo.WebhookEdit{
-			Content: "error executing command",
+		message, err := Session.InteractionResponseEdit(&i, &discordgo.WebhookEdit{
+			Content: &genericError,
 		})
 		if err != nil {
 			Session.InteractionRespond(&i, &discordgo.InteractionResponse{

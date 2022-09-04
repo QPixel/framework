@@ -1,6 +1,6 @@
 module github.com/qpixel/framework
 
-go 1.17
+go 1.18
 
 require (
 	github.com/QPixel/orderedmap v0.2.0

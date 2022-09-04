@@ -3,12 +3,13 @@ package framework
 import (
 	"errors"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
-	"github.com/dlclark/regexp2"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/dlclark/regexp2"
 )
 
 // util.go
@@ -378,4 +379,10 @@ func dgoLog(msgL, caller int, format string, a ...interface{}) {
 	case discordgo.LogDebug:
 		dlog.Debugf("%s:%d:%s() %s", file, line, name, msg)
 	}
+}
+
+// ToPtr
+// quick func to turn anything into a pointer
+func ToPtr[T any](v T) *T {
+	return &v
 }

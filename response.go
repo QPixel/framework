@@ -226,9 +226,9 @@ func (r *Response) Send(success bool, title string, description string) {
 		if r.Loading {
 			// Check to see if the command is ephemeral (only shown to the user)
 			if r.Ephemeral {
-				_, err := Session.InteractionResponseEdit(Session.State.User.ID, r.Ctx.Interaction, &discordgo.WebhookEdit{
-					Components: r.ResponseComponents.Components,
-					Embeds: []*discordgo.MessageEmbed{
+				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
+					Components: &r.ResponseComponents.Components,
+					Embeds: &[]*discordgo.MessageEmbed{
 						r.Embed,
 					},
 				})
@@ -249,12 +249,12 @@ func (r *Response) Send(success bool, title string, description string) {
 					}
 				}
 			} else {
-				_, err := Session.InteractionResponseEdit(Session.State.User.ID, r.Ctx.Interaction, &discordgo.WebhookEdit{
-					Content: "",
-					Embeds: []*discordgo.MessageEmbed{
+				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
+					Content: ToPtr[string](""),
+					Embeds: &[]*discordgo.MessageEmbed{
 						r.Embed,
 					},
-					Components: r.ResponseComponents.Components,
+					Components: &r.ResponseComponents.Components,
 				})
 				// Just in case the interaction gets removed.
 				if err != nil {
@@ -367,7 +367,7 @@ func ErrorResponse(i *discordgo.Interaction, errorMsg string, trigger string) {
 
 	time.AfterFunc(time.Second*5, func() {
 		time.Sleep(time.Second * 4)
-		Session.InteractionResponseDelete(Session.State.User.ID, i)
+		Session.InteractionResponseDelete(i)
 	})
 }
 
