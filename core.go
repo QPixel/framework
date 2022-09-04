@@ -136,7 +136,7 @@ func Start() {
 	Session.State.MaxMessageCount = MessageState
 	Session.LogLevel = discordgo.LogWarning
 	Session.SyncEvents = false
-	Session.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAll)
+	Session.Identify.Intents = discordgo.IntentsAllWithoutPrivileged | discordgo.IntentMessageContent
 
 	// Set the bots status
 	Session.Identify.Presence = botPresence
