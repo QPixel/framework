@@ -1,12 +1,15 @@
 package framework
 
 import (
-	"github.com/QPixel/orderedmap"
-	"github.com/bwmarrin/discordgo"
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/QPixel/orderedmap"
+	"github.com/bwmarrin/discordgo"
+	"github.com/dlclark/regexp2"
 )
 
 // commands.go
@@ -33,7 +36,7 @@ type CommandInfo struct {
 	IsTyping    bool                   // Whether the command will show a typing thing when ran.
 	IsParent    bool                   // If the command is the parent of a subcommand tree
 	IsChild     bool                   // If the command is the child
-	Trigger     string                 // The string that will trigger the command
+	Name        string                 // The name of the command
 }
 
 // Context
@@ -53,108 +56,309 @@ type Context struct {
 type BotFunction func(ctx *Context)
 
 // Command
-// The definition of a command, which is that command's information, along with the function it will run
+// The definition of a command, which is that command's information, along with the functions it will run
+// Handlers is a map of strings to BotFunctions, so that different handlers can be used for different situations
 type Command struct {
-	Info     CommandInfo
-	Function BotFunction
+	Info               *CommandInfo
+	Handlers           map[string]BotFunction
+	ApplicationCommand *discordgo.ApplicationCommand
 }
 
-// ChildCommand
-// Defines how child commands are stored
-type ChildCommand map[string]map[string]Command
-
 // commands
-// All the registered core commands (not custom commands)
+// All commands that are registered with the bot are stored here
 // This is private so that other commands cannot modify it
-var commands = make(map[string]Command)
-
-// childCommands
-// All the registered ChildCommands (SubCmdGrps)
-// This is private so other commands cannot modify it
-var childCommands = make(ChildCommand)
+var commands = make(map[string]*Command)
 
 // Command Aliases
 // A map of aliases to command triggers
 var commandAliases = make(map[string]string)
 
-// slashCommands
-// All the registered core commands that are also slash commands
-// This is also private so other commands cannot modify it
-var slashCommands = make(map[string]discordgo.ApplicationCommand)
-
 // commandsGC
 var commandsGC = 0
+
+// -- Command Configuration --
+
+// CreateCommandInfo
+// Creates a pointer to a CommandInfo
+func CreateCommandInfo(name string, description string, public bool, group Group) *CommandInfo {
+	cI := &CommandInfo{
+		Aliases:     make([]string, 0),
+		Arguments:   orderedmap.New(),
+		Description: description,
+		Group:       group,
+		Public:      public,
+		IsTyping:    false,
+		Name:        name,
+		IsParent:    true,
+		IsChild:     false,
+	}
+	cI.Aliases = append(cI.Aliases, name)
+	return cI
+}
+
+// Sets the parent properties
+func (cI *CommandInfo) SetParent(isParent bool, parentID string) {
+	if !isParent {
+		cI.IsChild = true
+	}
+	cI.IsParent = isParent
+	cI.ParentID = parentID
+}
+
+// AddCmdAlias
+// Adds a list of strings as aliases for the command
+func (cI *CommandInfo) AddCmdAlias(aliases []string) *CommandInfo {
+	if len(aliases) < 1 {
+		return cI
+	}
+	cI.Aliases = aliases
+	return cI
+}
+
+// AddArg
+// Adds an arg to the CommandInfo
+func (cI *CommandInfo) AddArg(argument string, typeGuard ArgTypeGuards, match ArgTypes, description string, required bool) *CommandInfo {
+	cI.Arguments.Set(argument, &ArgInfo{
+		TypeGuard:     typeGuard,
+		Description:   description,
+		Required:      required,
+		Match:         match,
+		DefaultOption: "",
+		Choices:       make([]*discordgo.ApplicationCommandOptionChoice, 0),
+		Regex:         nil,
+		AutoComplete:  false,
+	})
+	return cI
+}
+
+// AddFlagArg
+// Adds a flag arg, which is a special type of argument
+// This type of argument allows for the user to place the "phrase" (e.g: --debug) anywhere
+// in the command string and the parser will find it.
+func (cI *CommandInfo) AddFlagArg(flag string, typeGuard ArgTypeGuards, match ArgTypes, description string, required bool, defaultOption string) *CommandInfo {
+	regexString := flag
+	if match == ArgOption {
+		// Currently, it only supports a limited character set.
+		// todo figure out how to detect any character
+		regexString = fmt.Sprintf("--%s (([a-zA-Z0-9:/.]+)|(\"[a-zA-Z0-9:/. ]+\"))", flag)
+	} else {
+		regexString = fmt.Sprintf("--%s", flag)
+	}
+	regex, err := regexp2.Compile(regexString, 0)
+	if err != nil {
+		log.Fatalf("Unable to create regex for flag on command %s flag: %s", cI.Name, flag)
+	}
+	cI.Arguments.Set(flag, &ArgInfo{
+		Description:   description,
+		Required:      required,
+		Flag:          true,
+		Match:         match,
+		TypeGuard:     typeGuard,
+		DefaultOption: defaultOption,
+		Regex:         regex,
+	})
+	return cI
+}
+
+// AddChoice
+// Adds an argument choice
+func (cI *CommandInfo) AddChoice(arg string, choice string) *CommandInfo {
+	v, ok := cI.Arguments.Get(arg)
+	if ok {
+		vv := v.(*ArgInfo)
+		vv.Choices = append(vv.Choices, &discordgo.ApplicationCommandOptionChoice{
+			Name:  choice,
+			Value: choice,
+		})
+		cI.Arguments.Set(arg, vv)
+	} else {
+		log.Errorf("Unable to get argument %s in AddChoice", arg)
+		return cI
+	}
+	return cI
+}
+
+// AddChoices
+// Adds SubCmd choices
+func (cI *CommandInfo) AddChoices(arg string, choices []string) *CommandInfo {
+	v, ok := cI.Arguments.Get(arg)
+	if ok {
+		vv := v.(*ArgInfo)
+		optionChoice := make([]*discordgo.ApplicationCommandOptionChoice, 0)
+		for _, v := range choices {
+			optionChoice = append(optionChoice, &discordgo.ApplicationCommandOptionChoice{
+				Name:  v,
+				Value: v,
+			})
+		}
+		vv.Choices = append(vv.Choices, optionChoice...)
+		cI.Arguments.Set(arg, vv)
+	} else {
+		log.Errorf("Unable to get argument %s in AddChoices", arg)
+		return cI
+	}
+	return cI
+}
+
+// AddChoices
+// Adds SubCmd choices
+func (cI *CommandInfo) AddChoicesManual(arg string, choices []*discordgo.ApplicationCommandOptionChoice) *CommandInfo {
+	v, ok := cI.Arguments.Get(arg)
+	if ok {
+		vv := v.(*ArgInfo)
+		vv.Choices = append(vv.Choices, choices...)
+		cI.Arguments.Set(arg, vv)
+	} else {
+		log.Errorf("Unable to get argument %s in AddChoices", arg)
+		return cI
+	}
+	return cI
+}
+
+func (cI *CommandInfo) SetTyping(isTyping bool) *CommandInfo {
+	cI.IsTyping = isTyping
+	return cI
+}
+
+func (cI *CommandInfo) SetAutocomplete(arg string, autocomplete bool) *CommandInfo {
+	v, ok := cI.Arguments.Get(arg)
+	if ok {
+		vv := v.(*ArgInfo)
+		vv.AutoComplete = autocomplete
+		cI.Arguments.Set(arg, vv)
+	} else {
+		log.Errorf("Unable to get argument %s in SetAutocomplete", arg)
+		return cI
+	}
+	return cI
+}
+
+// -- Argument Parser --
+
+// ParseArguments
+// Version two of the argument parser
+func ParseArguments(args string, infoArgs *orderedmap.OrderedMap) *Arguments {
+	ar := make(Arguments)
+
+	if args == "" || len(infoArgs.Keys()) < 1 {
+		return &ar
+	}
+	// Split string on spaces to get every "phrase"
+
+	// bool to parse content strings
+	moreContent := false
+	// Keys of infoArgs
+	k := infoArgs.Keys()
+	var modK []string
+	// First find all flags in the string.
+	splitString, ar, modK := findAllFlags(args, k, infoArgs, &ar)
+	// Find all the option args (e.g. single 'phrases' or quoted strings)
+	// Then return the currentPos, so we can index k and find remaining keys.
+	// Also return a modified Arguments struct
+
+	ar, moreContent, splitString, modK = findAllOptionArgs(splitString, modK, infoArgs, &ar)
+
+	// If there is more content, lets find it
+	if moreContent == true {
+		v, ok := infoArgs.Get(modK[0])
+		if !ok {
+			return &ar
+		}
+		vv := v.(*ArgInfo)
+		commandContent, _ := createContentString(splitString, 0)
+		ar[modK[0]] = CommandArg{
+			info:  *vv,
+			Value: commandContent,
+		}
+		return &ar
+		// Else return the args struct
+	} else {
+		return &ar
+	}
+}
 
 // AddCommand
 // Add a command to the bot
 func AddCommand(info *CommandInfo, function BotFunction) {
-	// Add Trigger to the alias
-	info.Aliases = append(info.Aliases, info.Trigger)
 	// Build a Command object for this command
+	appCommand := createApplicationChatCommand(info)
 	command := Command{
-		Info:     *info,
-		Function: function,
+		Info:               info,
+		Handlers:           make(map[string]BotFunction),
+		ApplicationCommand: appCommand,
 	}
+
+	command.Handlers["default"] = function
+
 	// adds a alias to a map; command aliases are case-sensitive
 	for _, alias := range info.Aliases {
 		if _, ok := commandAliases[alias]; ok {
-			log.Errorf("Alias was already registered %s for command %s", alias, info.Trigger)
+			log.Errorf("Alias was already registered %s for command %s", alias, info.Name)
 			continue
 		}
 		alias = strings.ToLower(alias)
-		commandAliases[alias] = info.Trigger
+		commandAliases[alias] = info.Name
 	}
 	// Add the command to the map; command triggers are case-insensitive
-	commands[strings.ToLower(info.Trigger)] = command
+	commands[strings.ToLower(info.Name)] = &command
 }
 
-// AddChildCommand
-// Adds a child command to the bot.
-func AddChildCommand(info *CommandInfo, function BotFunction) {
-	// Build a Command object for this command
-	command := Command{
-		Info:     *info,
-		Function: function,
+// AddCommandHandler
+// Adds a command handler to the bot
+func AddCommandHandler(info *CommandInfo, function BotFunction, handler string) {
+	if _, ok := commands[strings.ToLower(info.Name)]; !ok {
+		log.Errorf("Command was not found")
+		return
 	}
-	parentID := strings.ToLower(info.ParentID)
-	if childCommands[parentID] == nil {
-		childCommands[parentID] = make(map[string]Command)
-	}
-	// Add the command to the map; command triggers are case-insensitive
-	childCommands[parentID][command.Info.Trigger] = command
+	commands[strings.ToLower(info.Name)].Handlers[handler] = function
 }
 
-// AddSlashCommand
-// Adds a slash command to the bot
-// Allows for separation between normal commands and slash commands
-func AddSlashCommand(info *CommandInfo) {
-	if !info.IsParent || !info.IsChild {
-		s := createSlashCommandStruct(info)
-		slashCommands[strings.ToLower(info.Trigger)] = *s
-		return
-	}
-	if info.IsParent {
-		s := createSlashSubCmdStruct(info, childCommands[info.Trigger])
-		slashCommands[strings.ToLower(info.Trigger)] = *s
-		return
-	}
-}
+// // AddChildCommand
+// // Adds a child command to the bot.
+// func AddChildCommand(info *CommandInfo, function BotFunction) {
+// 	// Build a Command object for this command
+// 	command := Command{
+// 		Info:     *info,
+// 		Handlers: make(map[string]BotFunction),
+// 	}
+// 	command.Handlers["default"] = function
+// 	parentID := strings.ToLower(info.ParentID)
+
+// 	// Add the command to the map; command triggers are case-insensitive
+// 	commands[fmt.Sprintf("%s:%s", strings.ToLower(parentID), strings.ToLower(info.Name))] = command
+// }
+
+// // AddSlashCommand
+// // Adds a slash command to the bot
+// // Allows for separation between normal commands and slash commands
+// func AddSlashCommand(info *CommandInfo) {
+// 	if !info.IsParent || !info.IsChild {
+// 		s := createSlashCommandStruct(info)
+// 		slashCommands[strings.ToLower(info.Trigger)] = *s
+// 		return
+// 	}
+// 	if info.IsParent {
+// 		s := createSlashSubCmdStruct(info, childCommands[info.Trigger])
+// 		slashCommands[strings.ToLower(info.Trigger)] = *s
+// 		return
+// 	}
+// }
 
 // AddSlashCommands
 // Defaults to adding Global slash commands
 // Currently hard coded to guild commands for testing
 func AddSlashCommands(guildId string, c chan string) {
-	for _, v := range slashCommands {
-		_, err := Session.ApplicationCommandCreate(Session.State.User.ID, guildId, &v)
+	for _, v := range commands {
+		log.Debugf("Adding slash command %s", v.ApplicationCommand.Name)
+		_, err := Session.ApplicationCommandCreate(Session.State.User.ID, guildId, v.ApplicationCommand)
 		if err != nil {
 			c <- "Unable to register slash commands :/"
-			log.Errorf("Cannot create '%v' command: %v", v.Name, err)
-			log.Errorf("%v", v.Options)
+			log.Errorf("Cannot create '%v' command: %v", v.Info, err)
+			log.Errorf("%v", v.ApplicationCommand)
 			return
 		}
 	}
 	c <- "Finished registering slash commands"
-	return
 }
 
 // GetCommands
@@ -162,7 +366,7 @@ func AddSlashCommands(guildId string, c chan string) {
 func GetCommands() map[string]CommandInfo {
 	list := make(map[string]CommandInfo)
 	for x, y := range commands {
-		list[x] = y.Info
+		list[x] = *y.Info
 	}
 	return list
 }
@@ -236,12 +440,12 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 
 		defer handleCommandError(g.ID, channel.ID, message.Author.ID)
 		if command.Info.IsParent {
-			handleChildCommand(*argString, command, message.Message, g)
+			// handleChildCommand(*argString, command, message.Message, g)
 			return
 		}
-		command.Function(&Context{
+		command.Handlers["default"](&Context{
 			Guild:   g,
-			Cmd:     command.Info,
+			Cmd:     *command.Info,
 			Args:    *ParseArguments(*argString, command.Info.Arguments),
 			Message: message.Message,
 		})
@@ -257,37 +461,37 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 
 }
 
-// -- Helper Methods
-func handleChildCommand(argString string, command Command, message *discordgo.Message, g *Guild) {
-	split := strings.SplitN(argString, " ", 2)
+// // -- Helper Methods
+// func handleChildCommand(argString string, command Command, message *discordgo.Message, g *Guild) {
+// 	split := strings.SplitN(argString, " ", 2)
 
-	childCmd, ok := childCommands[command.Info.Trigger][split[0]]
-	if !ok {
-		command.Function(&Context{
-			Guild:   g,
-			Cmd:     command.Info,
-			Args:    nil,
-			Message: message,
-		})
-		return
-	}
-	if len(split) < 2 {
-		childCmd.Function(&Context{
-			Guild:   g,
-			Cmd:     childCmd.Info,
-			Args:    *ParseArguments("", childCmd.Info.Arguments),
-			Message: message,
-		})
-		return
-	}
-	childCmd.Function(&Context{
-		Guild:   g,
-		Cmd:     childCmd.Info,
-		Args:    *ParseArguments(split[1], childCmd.Info.Arguments),
-		Message: message,
-	})
-	return
-}
+// 	childCmd, ok := childCommands[command.Info.Trigger][split[0]]
+// 	if !ok {
+// 		command.Function(&Context{
+// 			Guild:   g,
+// 			Cmd:     command.Info,
+// 			Args:    nil,
+// 			Message: message,
+// 		})
+// 		return
+// 	}
+// 	if len(split) < 2 {
+// 		childCmd.Function(&Context{
+// 			Guild:   g,
+// 			Cmd:     childCmd.Info,
+// 			Args:    *ParseArguments("", childCmd.Info.Arguments),
+// 			Message: message,
+// 		})
+// 		return
+// 	}
+// 	childCmd.Function(&Context{
+// 		Guild:   g,
+// 		Cmd:     childCmd.Info,
+// 		Args:    *ParseArguments(split[1], childCmd.Info.Arguments),
+// 		Message: message,
+// 	})
+// 	return
+// }
 
 func handleCommandError(gID string, cId string, uId string) {
 	if r := recover(); r != nil {

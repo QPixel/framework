@@ -3,11 +3,12 @@ package framework
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/QPixel/orderedmap"
 	"github.com/bwmarrin/discordgo"
 	"github.com/dlclark/regexp2"
-	"strconv"
-	"strings"
 )
 
 // Arguments.go
@@ -49,16 +50,18 @@ var (
 )
 
 // ArgInfo
-// Describes a CommandInfo argument
+// Describes the argument that a command will receive
 type ArgInfo struct {
+	Name          string
 	Match         ArgTypes
 	TypeGuard     ArgTypeGuards
 	Description   string
 	Required      bool
 	Flag          bool
 	DefaultOption string
-	Choices       []string
+	Choices       []*discordgo.ApplicationCommandOptionChoice
 	Regex         *regexp2.Regexp
+	AutoComplete  bool
 }
 
 // CommandArg
@@ -71,171 +74,6 @@ type CommandArg struct {
 // Arguments
 // Type of the arguments field in the command ctx
 type Arguments map[string]CommandArg
-
-// -- Command Configuration --
-
-// CreateCommandInfo
-// Creates a pointer to a CommandInfo
-func CreateCommandInfo(trigger string, description string, public bool, group Group) *CommandInfo {
-	cI := &CommandInfo{
-		Aliases:     nil,
-		Arguments:   orderedmap.New(),
-		Description: description,
-		Group:       group,
-		Public:      public,
-		IsTyping:    false,
-		Trigger:     trigger,
-	}
-	return cI
-}
-
-// CreateRawCmdInfo
-// Creates a pointer to a CommandInfo
-func CreateRawCmdInfo(cI *CommandInfo) *CommandInfo {
-	cI.Arguments = orderedmap.New()
-	return cI
-}
-
-// SetParent
-// Sets the parent properties
-func (cI *CommandInfo) SetParent(isParent bool, parentID string) {
-	if !isParent {
-		cI.IsChild = true
-	}
-	cI.IsParent = isParent
-	cI.ParentID = parentID
-}
-
-//AddCmdAlias
-// Adds a list of strings as aliases for the command
-func (cI *CommandInfo) AddCmdAlias(aliases []string) *CommandInfo {
-	if len(aliases) < 1 {
-		return cI
-	}
-	cI.Aliases = aliases
-	return cI
-}
-
-// AddArg
-// Adds an arg to the CommandInfo
-func (cI *CommandInfo) AddArg(argument string, typeGuard ArgTypeGuards, match ArgTypes, description string, required bool, defaultOption string) *CommandInfo {
-	cI.Arguments.Set(argument, &ArgInfo{
-		TypeGuard:     typeGuard,
-		Description:   description,
-		Required:      required,
-		Match:         match,
-		DefaultOption: defaultOption,
-		Choices:       nil,
-		Regex:         nil,
-	})
-	return cI
-}
-
-// AddFlagArg
-// Adds a flag arg, which is a special type of argument
-// This type of argument allows for the user to place the "phrase" (e.g: --debug) anywhere
-// in the command string and the parser will find it.
-func (cI *CommandInfo) AddFlagArg(flag string, typeGuard ArgTypeGuards, match ArgTypes, description string, required bool, defaultOption string) *CommandInfo {
-	regexString := flag
-	if match == ArgOption {
-		// Currently, it only supports a limited character set.
-		// todo figure out how to detect any character
-		regexString = fmt.Sprintf("--%s (([a-zA-Z0-9:/.]+)|(\"[a-zA-Z0-9:/. ]+\"))", flag)
-	} else {
-		regexString = fmt.Sprintf("--%s", flag)
-	}
-	regex, err := regexp2.Compile(regexString, 0)
-	if err != nil {
-		log.Fatalf("Unable to create regex for flag on command %s flag: %s", cI.Trigger, flag)
-	}
-	cI.Arguments.Set(flag, &ArgInfo{
-		Description:   description,
-		Required:      required,
-		Flag:          true,
-		Match:         match,
-		TypeGuard:     typeGuard,
-		DefaultOption: defaultOption,
-		Regex:         regex,
-	})
-	return cI
-}
-
-// AddChoices
-// Adds SubCmd choices
-func (cI *CommandInfo) AddChoices(arg string, choices []string) *CommandInfo {
-	v, ok := cI.Arguments.Get(arg)
-	if ok {
-		vv := v.(*ArgInfo)
-		vv.Choices = choices
-		cI.Arguments.Set(arg, vv)
-	} else {
-		log.Errorf("Unable to get argument %s in AddChoices", arg)
-		return cI
-	}
-	return cI
-}
-
-func (cI *CommandInfo) SetTyping(isTyping bool) *CommandInfo {
-	cI.IsTyping = isTyping
-	return cI
-}
-
-//todo subcommand stuff
-//// BindToChoice
-//// Bind an arg to choice (subcmd)
-//func (cI *CommandInfo) BindToChoice(arg string, choice string) {
-//
-//}
-
-// CreateAppOptSt
-// Creates an ApplicationOptionsStruct for all the args.
-func (cI *CommandInfo) CreateAppOptSt() *discordgo.ApplicationCommandOption {
-	return &discordgo.ApplicationCommandOption{}
-}
-
-// -- Argument Parser --
-
-// ParseArguments
-// Version two of the argument parser
-func ParseArguments(args string, infoArgs *orderedmap.OrderedMap) *Arguments {
-	ar := make(Arguments)
-
-	if args == "" || len(infoArgs.Keys()) < 1 {
-		return &ar
-	}
-	// Split string on spaces to get every "phrase"
-
-	// bool to parse content strings
-	moreContent := false
-	// Keys of infoArgs
-	k := infoArgs.Keys()
-	var modK []string
-	// First find all flags in the string.
-	splitString, ar, modK := findAllFlags(args, k, infoArgs, &ar)
-	// Find all the option args (e.g. single 'phrases' or quoted strings)
-	// Then return the currentPos, so we can index k and find remaining keys.
-	// Also return a modified Arguments struct
-
-	ar, moreContent, splitString, modK = findAllOptionArgs(splitString, modK, infoArgs, &ar)
-
-	// If there is more content, lets find it
-	if moreContent == true {
-		v, ok := infoArgs.Get(modK[0])
-		if !ok {
-			return &ar
-		}
-		vv := v.(*ArgInfo)
-		commandContent, _ := createContentString(splitString, 0)
-		ar[modK[0]] = CommandArg{
-			info:  *vv,
-			Value: commandContent,
-		}
-		return &ar
-		// Else return the args struct
-	} else {
-		return &ar
-	}
-}
 
 /* Argument Parsing Helpers */
 

@@ -3,7 +3,7 @@ package framework
 // handlers.go
 // Everything required for commands to pass their own handlers to discordgo and the framework itself.
 
-// handlers
+// dGOhandlers
 // This list stores all the handlers that can be added to the bot
 // It's basically a passthroughs for discordgo.AddHandler, but having a list
 // allows them to be collected ahead of time and then added all at once

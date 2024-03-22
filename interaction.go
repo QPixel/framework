@@ -10,35 +10,33 @@ import (
 
 // slashCommandTypes
 // A map of *short hand* slash commands types to their discordgo counterparts
-// TODO move this over to interaction.go
 var slashCommandTypes = map[ArgTypeGuards]discordgo.ApplicationCommandOptionType{
-	Int:     discordgo.ApplicationCommandOptionInteger,
-	String:  discordgo.ApplicationCommandOptionString,
-	Channel: discordgo.ApplicationCommandOptionChannel,
-	User:    discordgo.ApplicationCommandOptionUser,
-	Role:    discordgo.ApplicationCommandOptionRole,
-	Boolean: discordgo.ApplicationCommandOptionBoolean,
-	//SubCmd:    discordgo.ApplicationCommandOptionSubCommand,
-	//SubCmdGrp: discordgo.ApplicationCommandOptionSubCommandGroup,
+	Int:       discordgo.ApplicationCommandOptionInteger,
+	String:    discordgo.ApplicationCommandOptionString,
+	Channel:   discordgo.ApplicationCommandOptionChannel,
+	User:      discordgo.ApplicationCommandOptionUser,
+	Role:      discordgo.ApplicationCommandOptionRole,
+	Boolean:   discordgo.ApplicationCommandOptionBoolean,
+	SubCmd:    discordgo.ApplicationCommandOptionSubCommand,
+	SubCmdGrp: discordgo.ApplicationCommandOptionSubCommandGroup,
 }
 
 var genericError = "error executing command"
 
-// getSlashCommandStruct
-// Creates a slash command struct
-// todo work on sub command stuff
-func createSlashCommandStruct(info *CommandInfo) (st *discordgo.ApplicationCommand) {
+func createApplicationChatCommand(info *CommandInfo) (st *discordgo.ApplicationCommand) {
 	if info.Arguments == nil || len(info.Arguments.Keys()) < 1 {
 		st = &discordgo.ApplicationCommand{
-			Name:        info.Trigger,
+			Name:        info.Name,
 			Description: info.Description,
+			Type:        discordgo.ChatApplicationCommand,
 		}
 		return
 	}
 	st = &discordgo.ApplicationCommand{
-		Name:        info.Trigger,
+		Name:        info.Name,
 		Description: info.Description,
 		Options:     make([]*discordgo.ApplicationCommandOption, len(info.Arguments.Keys())),
+		Type:        discordgo.ChatApplicationCommand,
 	}
 	for i, k := range info.Arguments.Keys() {
 		v, _ := info.Arguments.Get(k)
@@ -50,47 +48,23 @@ func createSlashCommandStruct(info *CommandInfo) (st *discordgo.ApplicationComma
 			sType = slashCommandTypes["String"]
 		}
 		optionStruct := discordgo.ApplicationCommandOption{
-			Type:        sType,
-			Name:        k,
-			Description: vv.Description,
-			Required:    vv.Required,
+			Type:         sType,
+			Name:         k,
+			Description:  vv.Description,
+			Required:     vv.Required,
+			Autocomplete: vv.AutoComplete,
 		}
-		if vv.Choices != nil {
-			optionStruct.Choices = make([]*discordgo.ApplicationCommandOptionChoice, len(vv.Choices))
-			for i, k := range vv.Choices {
-				optionStruct.Choices[i] = &discordgo.ApplicationCommandOptionChoice{
-					Name:  k,
-					Value: k,
-				}
-			}
+		if len(vv.Choices) > 0 {
+			optionStruct.Choices = vv.Choices
 		}
 		st.Options[i] = &optionStruct
 	}
 	return
 }
 
-// Creates a slash subcmd struct
-func createSlashSubCmdStruct(info *CommandInfo, childCmds map[string]Command) (st *discordgo.ApplicationCommand) {
-	st = &discordgo.ApplicationCommand{
-		Name:        info.Trigger,
-		Description: info.Description,
-		Options:     make([]*discordgo.ApplicationCommandOption, len(childCmds)),
-	}
-	currentPos := 0
-	for _, v := range childCmds {
-		// Stupid inline thing
-		if ar, _ := v.Info.Arguments.Get(v.Info.Arguments.Keys()[0]); ar.(*ArgInfo).TypeGuard == SubCmdGrp {
+// func createApplicationContextCommand(info *CommandInfo, context_type discordgo.ApplicationCommandType) (st *discordgo.ApplicationCommand) {
 
-		} else {
-			//Pixel:
-			//Yes I know this is O(N^2). Most likely I could get something better
-			//todo: refactor so this isn't as bad for performance
-			st.Options[currentPos] = v.Info.CreateAppOptSt()
-			currentPos++
-		}
-	}
-	return st
-}
+// }
 
 // -- Interaction Handlers --
 
@@ -100,11 +74,11 @@ func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
 		handleInteractionCommand(s, i)
-		break
 	case discordgo.InteractionMessageComponent:
 		handleMessageComponents(s, i)
+	case discordgo.InteractionApplicationCommandAutocomplete:
+		handleAutoComplete(s, i)
 	}
-	return
 }
 
 // handleInteractionCommand
@@ -143,9 +117,9 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 		// Bot admins supercede both checks
 
 		defer handleSlashCommandError(*i.Interaction)
-		command.Function(&Context{
+		command.Handlers["default"](&Context{
 			Guild:       g,
-			Cmd:         command.Info,
+			Cmd:         *command.Info,
 			Args:        *ParseInteractionArgs(i.ApplicationCommandData().Options),
 			Interaction: i.Interaction,
 			Message: &discordgo.Message{
@@ -173,7 +147,11 @@ func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreat
 			Embeds: i.Message.Embeds,
 		},
 	})
-	return
+}
+
+func handleAutoComplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Currently only supports autocomplete for the first option
+	// id = i.ApplicationCommandData().Options[0].Name
 }
 
 // -- Slash Argument Parsing Helpers --
