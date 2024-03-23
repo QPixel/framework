@@ -1,9 +1,12 @@
 package framework
 
 import (
+	"fmt"
 	"runtime"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	errors "gitlab.com/tozd/go/errors"
 )
 
 // -- Types and Structs --
@@ -77,7 +80,7 @@ func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	case discordgo.InteractionMessageComponent:
 		handleMessageComponents(s, i)
 	case discordgo.InteractionApplicationCommandAutocomplete:
-		handleAutoComplete(s, i)
+		handleAutoComplete(i)
 	}
 }
 
@@ -135,23 +138,57 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 }
 
 func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	content := "Currently testing customid " + i.MessageComponentData().CustomID
-	i.Message.Embeds[0].Description = content
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		// Buttons also may update the message which they was attached to.
-		// Or may just acknowledge (InteractionResponseDeferredMessageUpdate) that the event was received and not update the message.
-		// To update it later you need to use interaction response edit endpoint.
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			TTS:    false,
-			Embeds: i.Message.Embeds,
+	componentName := i.MessageComponentData().CustomID
+	if _, ok := componentHandlers[componentName]; !ok {
+		log.Errorf("No component found for %s", componentName)
+		return
+	}
+
+	defer handleSlashCommandError(*i.Interaction)
+	componentHandlers[componentName](&Context{
+		Guild:       getGuild(i.GuildID),
+		Cmd:         CommandInfo{},
+		Args:        map[string]CommandArg{},
+		Interaction: i.Interaction,
+		Message: &discordgo.Message{
+			Member:    i.Member,
+			Author:    i.Member.User,
+			ChannelID: i.ChannelID,
+			GuildID:   i.GuildID,
+			Content:   "",
 		},
 	})
 }
 
-func handleAutoComplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Currently only supports autocomplete for the first option
-	// id = i.ApplicationCommandData().Options[0].Name
+func handleAutoComplete(i *discordgo.InteractionCreate) {
+	commandName := i.ApplicationCommandData().Name
+	for _, option := range i.ApplicationCommandData().Options {
+		if option.Focused {
+			command := commands[strings.ToLower(commandName)]
+			if command == nil {
+				log.Errorf("No command found for autocomplete %s", commandName)
+				return
+			}
+
+			// All AutoComplete handlers are prefixed with "ac:"
+			handler := command.Handlers[fmt.Sprintf("ac:%s", strings.ToLower(option.Name))]
+
+			if handler == nil {
+				log.Errorf("No handler found for autocomplete %s", commandName)
+				return
+			}
+
+			defer handleAutoCompleteError(*i.Interaction, "Error executing autocomplete")
+
+			handler(&Context{
+				Guild:       getGuild(i.GuildID),
+				Cmd:         *command.Info,
+				Args:        *ParseInteractionArgs(i.ApplicationCommandData().Options),
+				Interaction: i.Interaction,
+			})
+		}
+	}
+
 }
 
 // -- Slash Argument Parsing Helpers --
@@ -207,9 +244,10 @@ func RemoveGuildSlashCommands(guildID string) {
 
 func handleSlashCommandError(i discordgo.Interaction) {
 	if r := recover(); r != nil {
-		log.Warningf("Recovering from panic: %s", r)
+		e := errors.WithStack(r.(error))
+		log.Warningf("Recovering from panic: %s", e)
 		log.Warningf("Sending Error report to admins")
-		SendErrorReport(i.GuildID, i.ChannelID, i.Member.User.ID, "Error!", r.(runtime.Error))
+		SendErrorReport(i.GuildID, i.ChannelID, i.Member.User.ID, "Error!", e)
 		message, err := Session.InteractionResponseEdit(&i, &discordgo.WebhookEdit{
 			Content: &genericError,
 		})
@@ -224,7 +262,13 @@ func handleSlashCommandError(i discordgo.Interaction) {
 			log.Errorf("err sending message %s", err)
 		}
 		Session.ChannelMessageDelete(i.ChannelID, message.ID)
-		return
 	}
-	return
+}
+
+func handleAutoCompleteError(i discordgo.Interaction, message string) {
+	if r := recover(); r != nil {
+		log.Warningf("Recovering from panic: %s", r)
+		log.Warningf("Sending Error report to admins")
+		SendErrorReport(i.GuildID, i.ChannelID, i.Member.User.ID, "Error!", r.(runtime.Error))
+	}
 }

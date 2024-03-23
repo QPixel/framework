@@ -348,6 +348,19 @@ func createDisplayDurationString(content string) (str string) {
 	return
 }
 
+// CreateOptionChoiceFromSlice
+// Given a slice of strings, create a slice of ApplicationCommandOptionChoice objects
+func CreateOptionChoiceFromSlice(slice []string) []*discordgo.ApplicationCommandOptionChoice {
+	choices := make([]*discordgo.ApplicationCommandOptionChoice, 0)
+	for _, v := range slice {
+		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+			Name:  v,
+			Value: v,
+		})
+	}
+	return choices
+}
+
 func FindAllString(re *regexp2.Regexp, s string) []string {
 	var matches []string
 	m, _ := re.FindStringMatch(s)

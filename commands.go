@@ -73,6 +73,9 @@ var commands = make(map[string]*Command)
 // A map of aliases to command triggers
 var commandAliases = make(map[string]string)
 
+// component handlers
+var componentHandlers = make(map[string]BotFunction)
+
 // commandsGC
 var commandsGC = 0
 
@@ -313,6 +316,26 @@ func AddCommandHandler(info *CommandInfo, function BotFunction, handler string) 
 	commands[strings.ToLower(info.Name)].Handlers[handler] = function
 }
 
+// AddAutoCompleteHandler
+// Adds an autocomplete handler to the bot
+func AddAutoCompleteHandler(info *CommandInfo, function BotFunction, handler string) {
+	if _, ok := commands[strings.ToLower(info.Name)]; !ok {
+		log.Errorf("Command was not found")
+		return
+	}
+	commands[info.Name].Handlers[fmt.Sprintf("ac:%s", strings.ToLower(handler))] = function
+}
+
+// AddComponentHandler
+// Adds a component handler to the bot
+func AddComponentHandler(handler string, function BotFunction) {
+	if _, ok := componentHandlers[handler]; ok {
+		log.Errorf("Component handler was already registered %s", handler)
+		return
+	}
+	componentHandlers[handler] = function
+}
+
 // // AddChildCommand
 // // Adds a child command to the bot.
 // func AddChildCommand(info *CommandInfo, function BotFunction) {
@@ -349,7 +372,6 @@ func AddCommandHandler(info *CommandInfo, function BotFunction, handler string) 
 // Currently hard coded to guild commands for testing
 func AddSlashCommands(guildId string, c chan string) {
 	for _, v := range commands {
-		log.Debugf("Adding slash command %s", v.ApplicationCommand.Name)
 		_, err := Session.ApplicationCommandCreate(Session.State.User.ID, guildId, v.ApplicationCommand)
 		if err != nil {
 			c <- "Unable to register slash commands :/"
@@ -369,6 +391,20 @@ func GetCommands() map[string]CommandInfo {
 		list[x] = *y.Info
 	}
 	return list
+}
+
+// SendAutocompleteChoices
+// Sends the choices to the user
+func (ctx *Context) SendAutocompleteChoices(choices []*discordgo.ApplicationCommandOptionChoice) {
+	err := Session.InteractionRespond(ctx.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+		Data: &discordgo.InteractionResponseData{
+			Choices: choices,
+		},
+	})
+	if err != nil {
+		log.Errorf("Error sending autocomplete choices %s", err)
+	}
 }
 
 // commandHandler

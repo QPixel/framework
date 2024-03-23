@@ -13,8 +13,8 @@ import (
 // Stores the components for response
 // allows for functions to add data
 type ResponseComponents struct {
-	Components        []discordgo.MessageComponent
-	SelectMenuOptions []discordgo.SelectMenuOption
+	Components        []*discordgo.MessageComponent
+	SelectMenuOptions []*discordgo.SelectMenuOption
 }
 
 // Response
@@ -58,6 +58,39 @@ func CreateComponentFields() []discordgo.MessageComponent {
 	}
 }
 
+func (c *ResponseComponents) FindButton(customID string) (*discordgo.Button, bool) {
+	for _, row := range c.Components {
+		for _, component := range row.(*discordgo.ActionsRow).Components {
+			if component.(discordgo.Button).CustomID == customID {
+				return component.(*discordgo.Button), true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (c *ResponseComponents) FindDropDown(customID string) (*discordgo.SelectMenu, bool) {
+	for _, row := range c.Components {
+		for _, component := range row.(*discordgo.ActionsRow).Components {
+			if component.(discordgo.SelectMenu).CustomID == customID {
+				return component.(*discordgo.SelectMenu), true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (c *ResponseComponents) ReplaceButton(customID string, button discordgo.Button) {
+	for i, row := range c.Components {
+		for j, component := range row.(discordgo.ActionsRow).Components {
+			if component.(discordgo.Button).CustomID == customID {
+				c.Components[i].(discordgo.ActionsRow).Components[j] = button
+				return
+			}
+		}
+	}
+}
+
 // NewResponse
 // Create a response object for a guild, which starts off as an empty Embed which will have fields added to it
 // The response starts with some "auditing" information
@@ -97,6 +130,35 @@ func NewResponse(ctx *Context, messageComponents bool, ephemeral bool) *Response
 	return r
 }
 
+// ReconstructResponse
+// Reconstruct a response object from a given context. Only for interactions
+func ReconstructResponse(ctx *Context) *Response {
+	if ctx.Interaction == nil {
+		log.Errorf("Tried to reconstruct response from context without interaction")
+		return nil
+	}
+	if ctx.Interaction.Message == nil {
+		log.Errorf("Tried to reconstruct response from context without interaction message")
+		return nil
+	}
+	if len(ctx.Interaction.Message.Embeds) == 0 {
+		log.Errorf("Tried to reconstruct response from context without embeds")
+		return nil
+	}
+	log.Debugf("Reconstructing response from context %#v", ctx.Interaction.Message.Embeds)
+	r := &Response{
+		Ctx:   ctx,
+		Embed: ctx.Interaction.Message.Embeds[0],
+		ResponseComponents: &ResponseComponents{
+			Components: ctx.Interaction.Message.Components,
+		},
+		Loading:   ctx.Cmd.IsTyping,
+		Ephemeral: ctx.Interaction.Message.Flags == 1<<6,
+		Reply:     false,
+	}
+	return r
+}
+
 // -- Fields --
 
 // AppendField
@@ -131,7 +193,7 @@ func CreateButton(label string, style discordgo.ButtonStyle, customID string, ur
 		Label:    label,
 		Style:    style,
 		Disabled: disabled,
-		Emoji:    discordgo.ComponentEmoji{},
+		Emoji:    nil,
 		URL:      url,
 		CustomID: customID,
 	}
@@ -150,12 +212,15 @@ func CreateDropDown(customID string, placeholder string, options []discordgo.Sel
 // AppendButton
 // Appends a button
 func (r *Response) AppendButton(label string, style discordgo.ButtonStyle, url string, customID string, rowID int) {
+	if r.ResponseComponents.Components == nil {
+		r.ResponseComponents.Components = CreateComponentFields()
+	}
 	row := r.ResponseComponents.Components[rowID].(discordgo.ActionsRow)
 	row.Components = append(row.Components, CreateButton(label, style, customID, url, false))
 	r.ResponseComponents.Components[rowID] = row
 }
 
-//AppendDropDown
+// AppendDropDown
 // Adds a DropDown component
 func (r *Response) AppendDropDown(customID string, placeholder string, noNewRow bool) {
 	if noNewRow {
@@ -258,11 +323,10 @@ func (r *Response) Send(success bool, title string, description string) {
 				})
 				// Just in case the interaction gets removed.
 				if err != nil {
+					log.Errorf("Error sending interaction response: %s", err)
 					_, err := Session.ChannelMessageSendEmbed(r.Ctx.Guild.Info.ResponseChannelId, r.Embed)
 					if err != nil {
-						_, err = Session.ChannelMessageSendEmbed(r.Ctx.Message.ChannelID, r.Embed)
-						if err != nil {
-						}
+						_, _ = Session.ChannelMessageSendEmbed(r.Ctx.Message.ChannelID, r.Embed)
 					}
 				}
 			}
@@ -342,6 +406,53 @@ func (r *Response) Send(success bool, title string, description string) {
 			Embed:      r.Embed,
 			Components: r.ResponseComponents.Components,
 		})
+	}
+}
+
+// -- Response Editing --
+
+// EditButtonDisabled
+// Edit a button to be disabled
+func (r *Response) EditButtonDisabled(buttonID string) {
+	r.EditButtonComplex(buttonID, "", 0, "", true)
+}
+
+// EditButtonComplex
+// Edit a button
+func (r *Response) EditButtonComplex(buttonID string, label string, style discordgo.ButtonStyle, url string, disabled bool) {
+	button, ok := r.ResponseComponents.FindButton(buttonID)
+	if !ok {
+		log.Errorf("Could not find button with ID %s", buttonID)
+		return
+	}
+
+	if label != "" {
+		button.Label = label
+	}
+	if style != 0 {
+		button.Style = style
+	}
+	if url != "" {
+		button.URL = url
+	}
+
+	if disabled {
+		button.Disabled = true
+	}
+	r.ResponseComponents.ReplaceButton(buttonID, *button)
+}
+
+// Edit
+// Edit a response
+func (r *Response) Edit() {
+	_, err := Session.ChannelMessageEditComplex(&discordgo.MessageEdit{
+		Channel:    r.Ctx.Message.ChannelID,
+		ID:         r.Ctx.Message.ID,
+		Embed:      r.Embed,
+		Components: &r.ResponseComponents.Components,
+	})
+	if err != nil {
+		SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Message.ChannelID, r.Ctx.Message.Author.ID, "Failed to edit message", err)
 	}
 }
 
