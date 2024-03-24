@@ -28,6 +28,7 @@ type Response struct {
 	Reply              bool
 	Embed              *discordgo.MessageEmbed
 	ResponseComponents *ResponseComponents
+	Content            string
 }
 
 // CreateField
@@ -306,6 +307,13 @@ func (r *Response) AppendDropDown(customID string, placeholder string, noNewRow 
 	}
 }
 
+// PrependContent
+// Prepend content to the response
+func (r *Response) PrependContent(content string) *Response {
+	r.Content = content + r.Content
+	return r
+}
+
 // Send
 // Send a compiled response
 func (r *Response) Send(success bool, title string, description string) {
@@ -363,6 +371,7 @@ func (r *Response) Send(success bool, title string, description string) {
 					Embeds: &[]*discordgo.MessageEmbed{
 						r.Embed,
 					},
+					Content: ToPtr[string](r.Content),
 				})
 				// Just in case the interaction gets removed.
 				if err != nil {
@@ -384,7 +393,7 @@ func (r *Response) Send(success bool, title string, description string) {
 				components := SerializeActionRow(r.ResponseComponents.Components)
 				log.Debugf("Sending interaction response with components: %#v", components)
 				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
-					Content: ToPtr[string](""),
+					Content: ToPtr[string](r.Content),
 					Embeds: &[]*discordgo.MessageEmbed{
 						r.Embed,
 					},
@@ -413,6 +422,7 @@ func (r *Response) Send(success bool, title string, description string) {
 						r.Embed,
 					},
 					Components: *SerializeActionRow(r.ResponseComponents.Components),
+					Content:    r.Content,
 				},
 			})
 			return
@@ -426,6 +436,7 @@ func (r *Response) Send(success bool, title string, description string) {
 					r.Embed,
 				},
 				Components: *SerializeActionRow(r.ResponseComponents.Components),
+				Content:    r.Content,
 			},
 		})
 		if err != nil {
@@ -449,6 +460,7 @@ func (r *Response) Send(success bool, title string, description string) {
 	_, err := Session.ChannelMessageSendComplex(r.Ctx.Guild.Info.ResponseChannelId, &discordgo.MessageSend{
 		Embed:      r.Embed,
 		Components: *SerializeActionRow(r.ResponseComponents.Components),
+		Content:    r.Content,
 	})
 	if err != nil && r.Reply {
 		// Reply to user if no output channel
@@ -463,6 +475,7 @@ func (r *Response) Send(success bool, title string, description string) {
 			AllowedMentions: &discordgo.MessageAllowedMentions{
 				Parse: []discordgo.AllowedMentionType{},
 			},
+			Content: r.Content,
 		})
 		if err != nil {
 			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Message.ChannelID, r.Ctx.Message.Author.ID, "Ultimately failed to send bot response", err)
@@ -472,6 +485,7 @@ func (r *Response) Send(success bool, title string, description string) {
 		_, err = Session.ChannelMessageSendComplex(r.Ctx.Message.ChannelID, &discordgo.MessageSend{
 			Embed:      r.Embed,
 			Components: *SerializeActionRow(r.ResponseComponents.Components),
+			Content:    r.Content,
 		})
 	}
 }

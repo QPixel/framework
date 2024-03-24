@@ -194,7 +194,7 @@ func Start() {
 	//Register slash commands
 	slashChannel := make(chan string)
 	log.Info("Registering slash commands")
-	go AddSlashCommands(botTestingId, slashChannel)
+	go RegisterSlashCommands(botTestingId, slashChannel)
 
 	// Bot ready
 	log.Info("Initialization complete! The bot is now ready.")

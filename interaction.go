@@ -69,9 +69,23 @@ func createApplicationChatCommand(info *CommandInfo) (st *discordgo.ApplicationC
 	return
 }
 
-// func createApplicationContextCommand(info *CommandInfo, context_type discordgo.ApplicationCommandType) (st *discordgo.ApplicationCommand) {
+func createApplicationContextCommand(info *CommandInfo) (st *discordgo.ApplicationCommand) {
+	var context_type discordgo.ApplicationCommandType
+	switch info.Type {
+	case UserCommand:
+		context_type = discordgo.UserApplicationCommand
+	case MessageCommand:
+		context_type = discordgo.MessageApplicationCommand
+	}
 
-// }
+	st = &discordgo.ApplicationCommand{
+		Name:             info.Name,
+		Type:             context_type,
+		IntegrationTypes: &info.IntegrationTypes,
+		Contexts:         &info.InstallationContexts,
+	}
+	return
+}
 
 // -- Interaction Handlers --
 
@@ -80,7 +94,7 @@ func createApplicationChatCommand(info *CommandInfo) (st *discordgo.ApplicationC
 func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
-		handleInteractionCommand(s, i)
+		handleApplicationCommand(s, i)
 	case discordgo.InteractionMessageComponent:
 		handleMessageComponents(s, i)
 	case discordgo.InteractionApplicationCommandAutocomplete:
@@ -88,19 +102,16 @@ func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
-// handleInteractionCommand
-// Handles a slash command
-func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// Let's check if this is a user command, if so lets handle it separately
-	if i.Interaction.Member == nil && i.Interaction.GuildID == "" {
-		handleUserApplicationCommand(s, i)
-		return
+// handleApplicationCommand
+// Handles a ApplicationCommand
+func handleApplicationCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.ApplicationCommandData().CommandType {
+	case discordgo.ChatApplicationCommand:
+		handleChatApplicationCommand(s, i)
+	case discordgo.UserApplicationCommand, discordgo.MessageApplicationCommand:
+		handleApplicationContextCommand(i)
 	}
 
-	g := getGuild(i.GuildID)
-
-	trigger := i.ApplicationCommandData().Name
-	log.Debugf("Handling command %s", trigger)
 	// if !IsAdmin(i.Member.User.ID) {
 	// 	// Ignore the command if it is globally disabled
 	// 	if g.IsGloballyDisabled(trigger) {
@@ -125,6 +136,21 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 	// 	}
 	// }
 
+}
+
+// handleChatApplicationCommand
+// Handles a slash command
+func handleChatApplicationCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Let's check if this is a user command, if so lets handle it separately
+	if i.Interaction.Member == nil && i.Interaction.GuildID == "" {
+		handleUserApplicationChatCommand(s, i)
+		return
+	}
+
+	g := getGuild(i.GuildID)
+
+	trigger := i.ApplicationCommandData().Name
+	log.Debugf("Handling command %s", trigger)
 	command := commands[trigger]
 	log.Debugf("Command %s found %#v", trigger, command)
 	// if IsAdmin(i.Member.User.ID) || command.Info.Public || g.IsMod(i.Member.User.ID) {
@@ -148,7 +174,56 @@ func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 	})
 }
 
-func handleUserApplicationCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+// handleApplicationContextCommand
+// Handles a context menu command
+func handleApplicationContextCommand(i *discordgo.InteractionCreate) {
+	switch i.ApplicationCommandData().CommandType {
+	case discordgo.UserApplicationCommand:
+		handleUserContextCommand(i)
+	case discordgo.MessageApplicationCommand:
+		handleMessageContextCommand(i)
+	}
+}
+
+// handleUserContextCommand
+// Handles a user context command
+func handleUserContextCommand(i *discordgo.InteractionCreate) {
+	trigger := i.ApplicationCommandData().Name
+	log.Debugf("Handling command %s", trigger)
+	command := commands[trigger]
+	log.Debugf("Command %s found %#v", trigger, command)
+	defer handleSlashCommandError(*i.Interaction)
+	command.Handlers["default"](&Context{
+		Guild:       getGuild(i.GuildID),
+		Cmd:         *command.Info,
+		Interaction: i.Interaction,
+		Message: &discordgo.Message{
+			Author:    i.User,
+			ChannelID: i.ChannelID,
+			Content:   "",
+		},
+	})
+}
+
+// handleMessageContextCommand
+// Handles a message context command
+func handleMessageContextCommand(i *discordgo.InteractionCreate) {
+	trigger := i.ApplicationCommandData().Name
+	log.Debugf("Handling command %s", trigger)
+	command := commands[trigger]
+	log.Debugf("Command %s found %#v", trigger, command)
+	defer handleSlashCommandError(*i.Interaction)
+	command.Handlers["default"](&Context{
+		Guild:       getGuild(i.GuildID),
+		Cmd:         *command.Info,
+		Interaction: i.Interaction,
+		Message:     i.Message,
+	})
+}
+
+// handleUserApplicationChatCommand
+// Handles a user application slash command
+func handleUserApplicationChatCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	trigger := i.ApplicationCommandData().Name
 	log.Debugf("Handling user command %s", trigger)
 	command := commands[trigger]

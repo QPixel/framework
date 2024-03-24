@@ -20,13 +20,24 @@ import (
 type Group string
 
 var (
-	Moderation Group = "moderation"
-	Utility    Group = "utility"
+	Moderation     Group = "moderation"
+	Utility        Group = "utility"
+	UserContext    Group = "context"
+	MessageContext Group = "message"
+)
+
+type CommandType string
+
+var (
+	ChatCommand    CommandType = "CHAT"
+	UserCommand    CommandType = "USER"
+	MessageCommand CommandType = "MESSAGE"
 )
 
 // CommandInfo
 // The definition of a command's info. This is everything about the command, besides the function it will run
 type CommandInfo struct {
+	Type                 CommandType            // The type of command
 	Aliases              []string               // Aliases for the normal trigger
 	Arguments            *orderedmap.OrderedMap // Arguments for the command
 	Description          string                 // A short description of what the command does
@@ -85,8 +96,12 @@ var commandsGC = 0
 
 // CreateCommandInfo
 // Creates a pointer to a CommandInfo
-func CreateCommandInfo(name string, description string, public bool, group Group) *CommandInfo {
+func CreateCommandInfo(name string, description string, public bool, group Group, command_type ...CommandType) *CommandInfo {
+	if len(command_type) < 1 {
+		command_type = append(command_type, ChatCommand)
+	}
 	cI := &CommandInfo{
+		Type:        command_type[0],
 		Aliases:     make([]string, 0),
 		Arguments:   orderedmap.New(),
 		Description: description,
@@ -302,6 +317,17 @@ func ParseArguments(args string, infoArgs *orderedmap.OrderedMap) *Arguments {
 // AddCommand
 // Add a command to the bot
 func AddCommand(info *CommandInfo, function BotFunction) {
+	switch info.Type {
+	case ChatCommand:
+		AddChatCommand(info, function)
+	case UserCommand, MessageCommand:
+		AddContextCommand(info, function)
+	}
+}
+
+// AddChatCommand
+// Add a chat command to the bot
+func AddChatCommand(info *CommandInfo, function BotFunction) {
 	// Build a Command object for this command
 	appCommand := createApplicationChatCommand(info)
 	command := Command{
@@ -321,6 +347,23 @@ func AddCommand(info *CommandInfo, function BotFunction) {
 		alias = strings.ToLower(alias)
 		commandAliases[alias] = info.Name
 	}
+	// Add the command to the map; command triggers are case-insensitive
+	commands[strings.ToLower(info.Name)] = &command
+}
+
+// AddContextCommand
+// Add a context command to the bot
+func AddContextCommand(info *CommandInfo, function BotFunction) {
+	appCommand := createApplicationContextCommand(info)
+	// Build a Command object for this command
+	command := Command{
+		Info:               info,
+		Handlers:           make(map[string]BotFunction),
+		ApplicationCommand: appCommand,
+	}
+
+	command.Handlers["default"] = function
+
 	// Add the command to the map; command triggers are case-insensitive
 	commands[strings.ToLower(info.Name)] = &command
 }
@@ -355,41 +398,10 @@ func AddComponentHandler(handler string, function BotFunction) {
 	componentHandlers[handler] = function
 }
 
-// // AddChildCommand
-// // Adds a child command to the bot.
-// func AddChildCommand(info *CommandInfo, function BotFunction) {
-// 	// Build a Command object for this command
-// 	command := Command{
-// 		Info:     *info,
-// 		Handlers: make(map[string]BotFunction),
-// 	}
-// 	command.Handlers["default"] = function
-// 	parentID := strings.ToLower(info.ParentID)
-
-// 	// Add the command to the map; command triggers are case-insensitive
-// 	commands[fmt.Sprintf("%s:%s", strings.ToLower(parentID), strings.ToLower(info.Name))] = command
-// }
-
-// // AddSlashCommand
-// // Adds a slash command to the bot
-// // Allows for separation between normal commands and slash commands
-// func AddSlashCommand(info *CommandInfo) {
-// 	if !info.IsParent || !info.IsChild {
-// 		s := createSlashCommandStruct(info)
-// 		slashCommands[strings.ToLower(info.Trigger)] = *s
-// 		return
-// 	}
-// 	if info.IsParent {
-// 		s := createSlashSubCmdStruct(info, childCommands[info.Trigger])
-// 		slashCommands[strings.ToLower(info.Trigger)] = *s
-// 		return
-// 	}
-// }
-
-// AddSlashCommands
+// RegisterSlashCommands
 // Defaults to adding Global slash commands
 // Currently hard coded to guild commands for testing
-func AddSlashCommands(guildId string, c chan string) {
+func RegisterSlashCommands(guildId string, c chan string) {
 	for _, v := range commands {
 		_, err := Session.ApplicationCommandCreate(Session.State.User.ID, guildId, v.ApplicationCommand)
 		if err != nil {
@@ -516,38 +528,6 @@ func commandHandler(session *discordgo.Session, message *discordgo.MessageCreate
 
 }
 
-// // -- Helper Methods
-// func handleChildCommand(argString string, command Command, message *discordgo.Message, g *Guild) {
-// 	split := strings.SplitN(argString, " ", 2)
-
-// 	childCmd, ok := childCommands[command.Info.Trigger][split[0]]
-// 	if !ok {
-// 		command.Function(&Context{
-// 			Guild:   g,
-// 			Cmd:     command.Info,
-// 			Args:    nil,
-// 			Message: message,
-// 		})
-// 		return
-// 	}
-// 	if len(split) < 2 {
-// 		childCmd.Function(&Context{
-// 			Guild:   g,
-// 			Cmd:     childCmd.Info,
-// 			Args:    *ParseArguments("", childCmd.Info.Arguments),
-// 			Message: message,
-// 		})
-// 		return
-// 	}
-// 	childCmd.Function(&Context{
-// 		Guild:   g,
-// 		Cmd:     childCmd.Info,
-// 		Args:    *ParseArguments(split[1], childCmd.Info.Arguments),
-// 		Message: message,
-// 	})
-// 	return
-// }
-
 func handleCommandError(gID string, cId string, uId string) {
 	if r := recover(); r != nil {
 		log.Warningf("Recovering from panic: %s", r)
@@ -561,5 +541,4 @@ func handleCommandError(gID string, cId string, uId string) {
 		_ = Session.ChannelMessageDelete(cId, message.ID)
 		return
 	}
-	return
 }
