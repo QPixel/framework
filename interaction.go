@@ -144,7 +144,7 @@ func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreat
 		return
 	}
 
-	defer handleSlashCommandError(*i.Interaction)
+	// defer handleSlashCommandError(*i.Interaction)
 	componentHandlers[componentName](&Context{
 		Guild:       getGuild(i.GuildID),
 		Cmd:         CommandInfo{},

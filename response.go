@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"reflect"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -13,8 +14,8 @@ import (
 // Stores the components for response
 // allows for functions to add data
 type ResponseComponents struct {
-	Components        []*discordgo.MessageComponent
-	SelectMenuOptions []*discordgo.SelectMenuOption
+	Components        []discordgo.ActionsRow
+	SelectMenuOptions []discordgo.SelectMenuOption
 }
 
 // Response
@@ -50,19 +51,23 @@ func CreateEmbed(color int, title string, description string, fields []*discordg
 	}
 }
 
-// CreateComponentFields
-// Returns a slice of a Message Component, containing a singular ActionsRow
-func CreateComponentFields() []discordgo.MessageComponent {
-	return []discordgo.MessageComponent{
-		discordgo.ActionsRow{},
-	}
-}
-
 func (c *ResponseComponents) FindButton(customID string) (*discordgo.Button, bool) {
+	log.Debugf("%#v", c.Components)
 	for _, row := range c.Components {
-		for _, component := range row.(*discordgo.ActionsRow).Components {
-			if component.(discordgo.Button).CustomID == customID {
-				return component.(*discordgo.Button), true
+		for _, component := range row.Components {
+			log.Debugf("%#v", component)
+			if component.Type() == discordgo.ButtonComponent {
+				ctype := reflect.TypeOf(component).Kind()
+				if ctype == reflect.Ptr {
+					if component.(*discordgo.Button).CustomID == customID {
+						return component.(*discordgo.Button), true
+					}
+				} else {
+					if component.(discordgo.Button).CustomID == customID {
+						return component.(*discordgo.Button), true
+					}
+				}
+
 			}
 		}
 	}
@@ -71,7 +76,7 @@ func (c *ResponseComponents) FindButton(customID string) (*discordgo.Button, boo
 
 func (c *ResponseComponents) FindDropDown(customID string) (*discordgo.SelectMenu, bool) {
 	for _, row := range c.Components {
-		for _, component := range row.(*discordgo.ActionsRow).Components {
+		for _, component := range row.Components {
 			if component.(discordgo.SelectMenu).CustomID == customID {
 				return component.(*discordgo.SelectMenu), true
 			}
@@ -80,12 +85,25 @@ func (c *ResponseComponents) FindDropDown(customID string) (*discordgo.SelectMen
 	return nil, false
 }
 
+func (c *ResponseComponents) SetButton(customID string, button discordgo.Button, row ...int) {
+	if len(row) == 0 {
+		row = append(row, 0)
+	}
+	c.Components[row[0]].Components = append(c.Components[row[0]].Components, &button)
+}
+
 func (c *ResponseComponents) ReplaceButton(customID string, button discordgo.Button) {
 	for i, row := range c.Components {
-		for j, component := range row.(discordgo.ActionsRow).Components {
-			if component.(discordgo.Button).CustomID == customID {
-				c.Components[i].(discordgo.ActionsRow).Components[j] = button
-				return
+		for j, component := range row.Components {
+			ctype := reflect.TypeOf(component).Kind()
+			if ctype == reflect.Ptr {
+				if component.(*discordgo.Button).CustomID == customID {
+					c.Components[i].Components[j] = &button
+				}
+			} else {
+				if component.(discordgo.Button).CustomID == customID {
+					c.Components[i].Components[j] = &button
+				}
 			}
 		}
 	}
@@ -108,7 +126,7 @@ func NewResponse(ctx *Context, messageComponents bool, ephemeral bool) *Response
 		Reply:     ephemeral,
 	}
 	if messageComponents {
-		r.ResponseComponents.Components = CreateComponentFields()
+		r.ResponseComponents.Components = MakeActionRow()
 		r.ResponseComponents.SelectMenuOptions = []discordgo.SelectMenuOption{}
 	}
 	if r.Loading && ctx.Interaction != nil {
@@ -145,18 +163,62 @@ func ReconstructResponse(ctx *Context) *Response {
 		log.Errorf("Tried to reconstruct response from context without embeds")
 		return nil
 	}
-	log.Debugf("Reconstructing response from context %#v", ctx.Interaction.Message.Embeds)
+	log.Debugf("Reconstructing response from context %#v", ctx.Interaction)
 	r := &Response{
 		Ctx:   ctx,
 		Embed: ctx.Interaction.Message.Embeds[0],
 		ResponseComponents: &ResponseComponents{
-			Components: ctx.Interaction.Message.Components,
+			Components: ConvertMessageComponent(ctx.Interaction.Message.Components),
 		},
 		Loading:   ctx.Cmd.IsTyping,
 		Ephemeral: ctx.Interaction.Message.Flags == 1<<6,
 		Reply:     false,
 	}
 	return r
+}
+
+// ConvertComponent
+// Properly Type Asserts a MessageComponent to any of the possible types, and returns it
+// func ConvertComponent[K discordgo.MessageComponent](component discordgo.MessageComponent) (K, bool) {}
+
+// ConvertMessageComponent
+// Converts the components on the message struct to an array of ActionsRow
+func ConvertMessageComponent(components []discordgo.MessageComponent) []discordgo.ActionsRow {
+	var rows []discordgo.ActionsRow
+	log.Debugf("Converting message components: %#v", components)
+	for _, component := range components {
+		if row, ok := component.(discordgo.ActionsRow); ok {
+			rows = append(rows, row)
+		} else if row, ok := component.(*discordgo.ActionsRow); ok {
+			rows = append(rows, *row)
+		}
+	}
+	return rows
+}
+
+// MakeActionRow
+// Returns a slice of a Message Component, containing a singular ActionsRow
+func MakeActionRow() []discordgo.ActionsRow {
+	return make([]discordgo.ActionsRow, 1)
+}
+
+// SerializeActionRow
+// Converts a slice of ActionsRow to a slice of Message Components
+func SerializeActionRow(row []discordgo.ActionsRow) *[]discordgo.MessageComponent {
+	var components []discordgo.MessageComponent
+	for _, r := range row {
+		components = append(components, r)
+	}
+	return &components
+}
+
+// ConvertToMessageComponent
+// Converts a slice of Message Components to a slice of Message Components
+func ConvertToMessageComponent[T []discordgo.MessageComponent](component T) *[]discordgo.MessageComponent {
+	if c, ok := (any(component).([]discordgo.MessageComponent)); ok {
+		return &c
+	}
+	return nil
 }
 
 // -- Fields --
@@ -211,20 +273,22 @@ func CreateDropDown(customID string, placeholder string, options []discordgo.Sel
 
 // AppendButton
 // Appends a button
-func (r *Response) AppendButton(label string, style discordgo.ButtonStyle, url string, customID string, rowID int) {
-	if r.ResponseComponents.Components == nil {
-		r.ResponseComponents.Components = CreateComponentFields()
+func (r *Response) AppendButton(label string, style discordgo.ButtonStyle, url string, customID string, rowID ...int) {
+	if len(rowID) == 0 {
+		rowID = append(rowID, 0)
 	}
-	row := r.ResponseComponents.Components[rowID].(discordgo.ActionsRow)
-	row.Components = append(row.Components, CreateButton(label, style, customID, url, false))
-	r.ResponseComponents.Components[rowID] = row
+	if r.ResponseComponents.Components == nil {
+		r.ResponseComponents.Components = MakeActionRow()
+	}
+	button := CreateButton(label, style, customID, url, false)
+	r.ResponseComponents.SetButton(customID, *button, rowID...)
 }
 
 // AppendDropDown
 // Adds a DropDown component
 func (r *Response) AppendDropDown(customID string, placeholder string, noNewRow bool) {
 	if noNewRow {
-		row := r.ResponseComponents.Components[0].(discordgo.ActionsRow)
+		row := r.ResponseComponents.Components[0]
 		row.Components = append(row.Components, CreateDropDown(customID, placeholder, r.ResponseComponents.SelectMenuOptions))
 		r.ResponseComponents.Components[0] = row
 	} else {
@@ -271,7 +335,7 @@ func (r *Response) Send(success bool, title string, description string) {
 			}
 			_, dmSendErr := Session.ChannelMessageSendComplex(dmChannel.ID, &discordgo.MessageSend{
 				Embed:      r.Embed,
-				Components: r.ResponseComponents.Components,
+				Components: *SerializeActionRow(r.ResponseComponents.Components),
 			})
 			if dmSendErr != nil {
 				// Since error reports also use DMs, sending this as an error report would be redundant
@@ -291,8 +355,10 @@ func (r *Response) Send(success bool, title string, description string) {
 		if r.Loading {
 			// Check to see if the command is ephemeral (only shown to the user)
 			if r.Ephemeral {
+				components := SerializeActionRow(r.ResponseComponents.Components)
+				log.Debugf("Sending interaction response with components: %#v", components)
 				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
-					Components: &r.ResponseComponents.Components,
+					Components: components,
 					Embeds: &[]*discordgo.MessageEmbed{
 						r.Embed,
 					},
@@ -314,12 +380,14 @@ func (r *Response) Send(success bool, title string, description string) {
 					}
 				}
 			} else {
+				components := SerializeActionRow(r.ResponseComponents.Components)
+				log.Debugf("Sending interaction response with components: %#v", components)
 				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
 					Content: ToPtr[string](""),
 					Embeds: &[]*discordgo.MessageEmbed{
 						r.Embed,
 					},
-					Components: &r.ResponseComponents.Components,
+					Components: components,
 				})
 				// Just in case the interaction gets removed.
 				if err != nil {
@@ -343,7 +411,7 @@ func (r *Response) Send(success bool, title string, description string) {
 					Embeds: []*discordgo.MessageEmbed{
 						r.Embed,
 					},
-					Components: r.ResponseComponents.Components,
+					Components: *SerializeActionRow(r.ResponseComponents.Components),
 				},
 			})
 			return
@@ -356,7 +424,7 @@ func (r *Response) Send(success bool, title string, description string) {
 				Embeds: []*discordgo.MessageEmbed{
 					r.Embed,
 				},
-				Components: r.ResponseComponents.Components,
+				Components: *SerializeActionRow(r.ResponseComponents.Components),
 			},
 		})
 		if err != nil {
@@ -381,13 +449,13 @@ func (r *Response) Send(success bool, title string, description string) {
 	// If THAT fails, send an error report
 	_, err := Session.ChannelMessageSendComplex(r.Ctx.Guild.Info.ResponseChannelId, &discordgo.MessageSend{
 		Embed:      r.Embed,
-		Components: r.ResponseComponents.Components,
+		Components: *SerializeActionRow(r.ResponseComponents.Components),
 	})
 	if err != nil && r.Reply {
 		// Reply to user if no output channel
 		_, err = ReplyToUser(r.Ctx.Message.ChannelID, &discordgo.MessageSend{
 			Embed:      r.Embed,
-			Components: r.ResponseComponents.Components,
+			Components: *SerializeActionRow(r.ResponseComponents.Components),
 			Reference: &discordgo.MessageReference{
 				MessageID: r.Ctx.Message.ID,
 				ChannelID: r.Ctx.Message.ChannelID,
@@ -404,7 +472,7 @@ func (r *Response) Send(success bool, title string, description string) {
 		// If the command does not want to reply lets just send it to the channel the command was invoked
 		_, err = Session.ChannelMessageSendComplex(r.Ctx.Message.ChannelID, &discordgo.MessageSend{
 			Embed:      r.Embed,
-			Components: r.ResponseComponents.Components,
+			Components: *SerializeActionRow(r.ResponseComponents.Components),
 		})
 	}
 }
@@ -445,11 +513,13 @@ func (r *Response) EditButtonComplex(buttonID string, label string, style discor
 // Edit
 // Edit a response
 func (r *Response) Edit() {
+	component := SerializeActionRow(r.ResponseComponents.Components)
+	log.Debugf("Editing response with components: %#v", component)
 	_, err := Session.ChannelMessageEditComplex(&discordgo.MessageEdit{
-		Channel:    r.Ctx.Message.ChannelID,
-		ID:         r.Ctx.Message.ID,
+		Channel:    r.Ctx.Interaction.Message.ChannelID,
+		ID:         r.Ctx.Interaction.Message.ID,
 		Embed:      r.Embed,
-		Components: &r.ResponseComponents.Components,
+		Components: component,
 	})
 	if err != nil {
 		SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Message.ChannelID, r.Ctx.Message.Author.ID, "Failed to edit message", err)

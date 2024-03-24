@@ -1,13 +1,14 @@
 package framework
 
 import (
-	"github.com/bwmarrin/discordgo"
-	tlog "github.com/ubergeek77/tinylog"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/bwmarrin/discordgo"
+	tlog "github.com/ubergeek77/tinylog"
 )
 
 // core.go
@@ -61,6 +62,10 @@ var botPresence discordgo.GatewayStatusUpdate
 // Stores and allows for the calling of the chosen GuildProvider
 var initProvider func() GuildProvider
 
+// debugMode
+// A boolean that tells the bot to log debug messages
+var debugMode = false
+
 // SetInitProvider
 // Sets the init provider
 func SetInitProvider(provider func() GuildProvider) {
@@ -109,6 +114,12 @@ func IsCommand(trigger string) bool {
 	return false
 }
 
+// SetDebugMode
+// Set the log level to debug
+func SetDebugMode() {
+	debugMode = true
+}
+
 // Start the bot.
 func Start() {
 	discordgo.Logger = dgoLog
@@ -131,6 +142,10 @@ func Start() {
 
 	if err != nil {
 		log.Fatalf("Failed to create Discord session: %s", err)
+	}
+	if debugMode {
+		Session.LogLevel = discordgo.LogDebug
+		Session.Debug = true
 	}
 	// Setup State specific variables
 	Session.State.MaxMessageCount = MessageState
