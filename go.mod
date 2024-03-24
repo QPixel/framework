@@ -2,6 +2,8 @@ module github.com/qpixel/framework
 
 go 1.21
 
+replace github.com/bwmarrin/discordgo => ../discordgo
+
 require (
 	github.com/QPixel/orderedmap v0.2.0
 	github.com/bwmarrin/discordgo v0.27.2-0.20240315152229-33ee38cbf271

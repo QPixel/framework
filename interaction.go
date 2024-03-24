@@ -29,17 +29,21 @@ var genericError = "error executing command"
 func createApplicationChatCommand(info *CommandInfo) (st *discordgo.ApplicationCommand) {
 	if info.Arguments == nil || len(info.Arguments.Keys()) < 1 {
 		st = &discordgo.ApplicationCommand{
-			Name:        info.Name,
-			Description: info.Description,
-			Type:        discordgo.ChatApplicationCommand,
+			Name:             info.Name,
+			Description:      info.Description,
+			Type:             discordgo.ChatApplicationCommand,
+			IntegrationTypes: &info.IntegrationTypes,
+			Contexts:         &info.InstallationContexts,
 		}
 		return
 	}
 	st = &discordgo.ApplicationCommand{
-		Name:        info.Name,
-		Description: info.Description,
-		Options:     make([]*discordgo.ApplicationCommandOption, len(info.Arguments.Keys())),
-		Type:        discordgo.ChatApplicationCommand,
+		Name:             info.Name,
+		Description:      info.Description,
+		Options:          make([]*discordgo.ApplicationCommandOption, len(info.Arguments.Keys())),
+		Type:             discordgo.ChatApplicationCommand,
+		IntegrationTypes: &info.IntegrationTypes,
+		Contexts:         &info.InstallationContexts,
 	}
 	for i, k := range info.Arguments.Keys() {
 		v, _ := info.Arguments.Get(k)
@@ -87,54 +91,84 @@ func handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 // handleInteractionCommand
 // Handles a slash command
 func handleInteractionCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	// Let's check if this is a user command, if so lets handle it separately
+	if i.Interaction.Member == nil && i.Interaction.GuildID == "" {
+		handleUserApplicationCommand(s, i)
+		return
+	}
+
 	g := getGuild(i.GuildID)
 
 	trigger := i.ApplicationCommandData().Name
-	if !IsAdmin(i.Member.User.ID) {
-		// Ignore the command if it is globally disabled
-		if g.IsGloballyDisabled(trigger) {
-			ErrorResponse(i.Interaction, "Command is globally disabled", trigger)
-			return
-		}
+	log.Debugf("Handling command %s", trigger)
+	// if !IsAdmin(i.Member.User.ID) {
+	// 	// Ignore the command if it is globally disabled
+	// 	if g.IsGloballyDisabled(trigger) {
+	// 		ErrorResponse(i.Interaction, "Command is globally disabled", trigger)
+	// 		return
+	// 	}
 
-		// Ignore the command if this channel has blocked the command
-		if g.CommandIsDisabledInChannel(trigger, i.ChannelID) {
-			ErrorResponse(i.Interaction, "Command is disabled in this channel!", trigger)
-			return
-		}
+	// 	// Ignore the command if this channel has blocked the command
+	// 	if g.CommandIsDisabledInChannel(trigger, i.ChannelID) {
+	// 		ErrorResponse(i.Interaction, "Command is disabled in this channel!", trigger)
+	// 		return
+	// 	}
 
-		// Ignore any message if the user is banned from using the bot
-		if !g.MemberOrRoleIsWhitelisted(i.Member.User.ID) || g.MemberOrRoleIsIgnored(i.Member.User.ID) {
-			return
-		}
+	// 	// Ignore any message if the user is banned from using the bot
+	// 	if !g.MemberOrRoleIsWhitelisted(i.Member.User.ID) || g.MemberOrRoleIsIgnored(i.Member.User.ID) {
+	// 		return
+	// 	}
 
-		// Ignore the message if this channel is not whitelisted, or if it is ignored
-		if !g.ChannelIsWhitelisted(i.ChannelID) || g.ChannelIsIgnored(i.ChannelID) {
-			return
-		}
-	}
+	// 	// Ignore the message if this channel is not whitelisted, or if it is ignored
+	// 	if !g.ChannelIsWhitelisted(i.ChannelID) || g.ChannelIsIgnored(i.ChannelID) {
+	// 		return
+	// 	}
+	// }
 
 	command := commands[trigger]
-	if IsAdmin(i.Member.User.ID) || command.Info.Public || g.IsMod(i.Member.User.ID) {
-		// Check if the command is public, or if the current user is a bot moderator
-		// Bot admins supercede both checks
+	log.Debugf("Command %s found %#v", trigger, command)
+	// if IsAdmin(i.Member.User.ID) || command.Info.Public || g.IsMod(i.Member.User.ID) {
+	// Check if the command is public, or if the current user is a bot moderator
+	// Bot admins supercede both checks
+	// }
+	log.Debugf("%#v", i.Interaction)
+	defer handleSlashCommandError(*i.Interaction)
+	command.Handlers["default"](&Context{
+		Guild:       g,
+		Cmd:         *command.Info,
+		Args:        *ParseInteractionArgs(i.ApplicationCommandData().Options),
+		Interaction: i.Interaction,
+		Message: &discordgo.Message{
+			Member:    i.Member,
+			Author:    i.Member.User,
+			ChannelID: i.ChannelID,
+			GuildID:   i.GuildID,
+			Content:   "",
+		},
+	})
+}
 
-		defer handleSlashCommandError(*i.Interaction)
-		command.Handlers["default"](&Context{
-			Guild:       g,
-			Cmd:         *command.Info,
-			Args:        *ParseInteractionArgs(i.ApplicationCommandData().Options),
-			Interaction: i.Interaction,
-			Message: &discordgo.Message{
-				Member:    i.Member,
-				Author:    i.Member.User,
-				ChannelID: i.ChannelID,
-				GuildID:   i.GuildID,
-				Content:   "",
+func handleUserApplicationCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	trigger := i.ApplicationCommandData().Name
+	log.Debugf("Handling user command %s", trigger)
+	command := commands[trigger]
+	log.Debugf("Command %s found %#v", trigger, command)
+	defer handleSlashCommandError(*i.Interaction)
+	command.Handlers["default"](&Context{
+		Guild:       nil,
+		Cmd:         *command.Info,
+		Args:        *ParseInteractionArgs(i.ApplicationCommandData().Options),
+		Interaction: i.Interaction,
+		Message: &discordgo.Message{
+			Member: &discordgo.Member{
+				User: i.User,
 			},
-		})
-		return
-	}
+			Author:    i.User,
+			ChannelID: i.ChannelID,
+			Content:   "",
+		},
+	})
+
 }
 
 func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -144,7 +178,7 @@ func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreat
 		return
 	}
 
-	// defer handleSlashCommandError(*i.Interaction)
+	defer handleSlashCommandError(*i.Interaction)
 	componentHandlers[componentName](&Context{
 		Guild:       getGuild(i.GuildID),
 		Cmd:         CommandInfo{},

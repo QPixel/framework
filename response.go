@@ -225,27 +225,28 @@ func ConvertToMessageComponent[T []discordgo.MessageComponent](component T) *[]d
 
 // AppendField
 // Create a new basic field and append it to an existing Response
-func (r *Response) AppendField(name string, value string, inline bool) {
+func (r *Response) AppendField(name string, value string, inline bool) *Response {
 	r.Embed.Fields = append(r.Embed.Fields, CreateField(name, value, inline))
+	return r
 }
 
 // PrependField
 // Create a new basic field and prepend it to an existing Response
-func (r *Response) PrependField(name string, value string, inline bool) {
+func (r *Response) PrependField(name string, value string, inline bool) *Response {
 	fields := []*discordgo.MessageEmbedField{CreateField(name, value, inline)}
 	r.Embed.Fields = append(fields, r.Embed.Fields...)
+	return r
 }
 
 // AppendUsage
 // Add the command usage to the response. Intended for syntax error responses
-func (r *Response) AppendUsage() {
+func (r *Response) AppendUsage() *Response {
 	if r.Ctx.Cmd.Description == "" {
 		r.AppendField("Command description:", "no description", false)
-		return
+		return r
 	}
 	r.AppendField("Command description:", r.Ctx.Cmd.Description, false)
-	//r.AppendField("Command usage:", r.Ctx.Guild.GetCommandUsage(r.Ctx.Cmd), false)
-
+	return r
 }
 
 // -- Message Components --
@@ -324,7 +325,7 @@ func (r *Response) Send(success bool, title string, description string) {
 	r.Embed.Color = color
 
 	// If guild is nil, this is intended to be sent to Bot Admins
-	if r.Ctx.Guild == nil {
+	if r.Ctx.Guild == nil && r.Ctx.Interaction == nil {
 		for admin := range botAdmins {
 			dmChannel, dmCreateErr := Session.UserChannelCreate(admin)
 			if dmCreateErr != nil {
@@ -428,9 +429,7 @@ func (r *Response) Send(success bool, title string, description string) {
 			},
 		})
 		if err != nil {
-			if err != nil {
-				SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
-			}
+			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
 			if r.Ctx.Guild.Info.ResponseChannelId != "" {
 				_, err = Session.ChannelMessageSendEmbed(r.Ctx.Guild.Info.ResponseChannelId, r.Embed)
 

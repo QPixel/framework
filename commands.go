@@ -27,16 +27,18 @@ var (
 // CommandInfo
 // The definition of a command's info. This is everything about the command, besides the function it will run
 type CommandInfo struct {
-	Aliases     []string               // Aliases for the normal trigger
-	Arguments   *orderedmap.OrderedMap // Arguments for the command
-	Description string                 // A short description of what the command does
-	Group       Group                  // The group this command belongs to
-	ParentID    string                 // The ID of the parent command
-	Public      bool                   // Whether non-admins and non-mods can use this command
-	IsTyping    bool                   // Whether the command will show a typing thing when ran.
-	IsParent    bool                   // If the command is the parent of a subcommand tree
-	IsChild     bool                   // If the command is the child
-	Name        string                 // The name of the command
+	Aliases              []string               // Aliases for the normal trigger
+	Arguments            *orderedmap.OrderedMap // Arguments for the command
+	Description          string                 // A short description of what the command does
+	Group                Group                  // The group this command belongs to
+	ParentID             string                 // The ID of the parent command
+	Public               bool                   // Whether non-admins and non-mods can use this command
+	IsTyping             bool                   // Whether the command will show a typing thing when ran.
+	IsParent             bool                   // If the command is the parent of a subcommand tree
+	IsChild              bool                   // If the command is the child
+	Name                 string                 // The name of the command
+	IntegrationTypes     []discordgo.ApplicationIntegrationType
+	InstallationContexts []discordgo.InteractionContextType
 }
 
 // Context
@@ -94,18 +96,25 @@ func CreateCommandInfo(name string, description string, public bool, group Group
 		Name:        name,
 		IsParent:    true,
 		IsChild:     false,
+		IntegrationTypes: []discordgo.ApplicationIntegrationType{
+			discordgo.ApplicationIntegrationGuildInstall,
+		},
+		InstallationContexts: []discordgo.InteractionContextType{
+			discordgo.InteractionContextGuild,
+		},
 	}
 	cI.Aliases = append(cI.Aliases, name)
 	return cI
 }
 
 // Sets the parent properties
-func (cI *CommandInfo) SetParent(isParent bool, parentID string) {
+func (cI *CommandInfo) SetParent(isParent bool, parentID string) *CommandInfo {
 	if !isParent {
 		cI.IsChild = true
 	}
 	cI.IsParent = isParent
 	cI.ParentID = parentID
+	return cI
 }
 
 // AddCmdAlias
@@ -233,6 +242,16 @@ func (cI *CommandInfo) SetAutocomplete(arg string, autocomplete bool) *CommandIn
 		log.Errorf("Unable to get argument %s in SetAutocomplete", arg)
 		return cI
 	}
+	return cI
+}
+
+func (cI *CommandInfo) SetIntegrationType(integrationType ...discordgo.ApplicationIntegrationType) *CommandInfo {
+	cI.IntegrationTypes = integrationType
+	return cI
+}
+
+func (cI *CommandInfo) SetInstallationContext(installationContext ...discordgo.InteractionContextType) *CommandInfo {
+	cI.InstallationContexts = installationContext
 	return cI
 }
 

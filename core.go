@@ -70,14 +70,12 @@ var debugMode = false
 // Sets the init provider
 func SetInitProvider(provider func() GuildProvider) {
 	initProvider = provider
-	return
 }
 
 // SetPresence
 // Sets the gateway field for bot presence
 func SetPresence(presence discordgo.GatewayStatusUpdate) {
 	botPresence = presence
-	return
 }
 
 // AddAdmin
@@ -208,7 +206,7 @@ func Start() {
 
 	// Set up a sigterm channel, so we can detect when the application receives a TERM signal
 	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, os.Interrupt, os.Kill)
+	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 
 	// Keep this thread blocked forever, until a TERM signal is received
 	<-sigChannel
@@ -220,7 +218,7 @@ func Start() {
 
 	// Make a second sig channel that will respond to user term signal immediately
 	sigInstant := make(chan os.Signal, 1)
-	signal.Notify(sigInstant, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+	signal.Notify(sigInstant, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 
 	// Make a goroutine that will wait for all background workers to be unlocked
 	go func() {
@@ -230,6 +228,7 @@ func Start() {
 			// If we are able to lock it, then it means the worker has stopped.
 			lock.Lock()
 			log.Info("Stopped worker " + strconv.Itoa(i))
+
 			lock.Unlock()
 		}
 

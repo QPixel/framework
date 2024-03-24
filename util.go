@@ -305,44 +305,35 @@ func createDisplayDurationString(content string) (str string) {
 				break
 			}
 			str += prefixChar + "Second"
-			break
 		case "m":
 			if multiplier > 1 {
 				str += prefixChar + fmt.Sprintf("%d Minutes", multiplier)
-				break
 			}
 			str += prefixChar + fmt.Sprintf("%d Minute", multiplier)
-			break
 		case "h":
 			if multiplier > 1 {
 				str += prefixChar + fmt.Sprintf("%d Hours", multiplier)
 				break
 			}
 			str += prefixChar + fmt.Sprintf("%d Hours", multiplier)
-			break
 		case "d":
 			if multiplier > 1 {
 				str += prefixChar + fmt.Sprintf("%d Days", multiplier)
 				break
 			}
 			str += prefixChar + fmt.Sprintf("%d Day", multiplier)
-			break
 		case "w":
 			if multiplier > 1 {
 				str += prefixChar + fmt.Sprintf("%d Weeks", multiplier)
 				break
 			}
 			str += prefixChar + fmt.Sprintf("%d Week", multiplier)
-			break
 		case "y":
 			if multiplier > 1 {
 				str += prefixChar + fmt.Sprintf("%d Years", multiplier)
 				break
 			}
 			str += prefixChar + fmt.Sprintf("%d Year", multiplier)
-			break
-		default:
-			break
 		}
 	}
 	return

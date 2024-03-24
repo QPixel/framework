@@ -141,10 +141,7 @@ func (g *Guild) GetMember(userId string) (*discordgo.Member, error) {
 // Determine whether or not a given userId is a member in this guild
 func (g *Guild) IsMember(userId string) bool {
 	_, err := g.GetMember(userId)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 // GetRole
@@ -175,10 +172,7 @@ func (g *Guild) GetRole(roleId string) (*discordgo.Role, error) {
 // Determine whether or not a given roleId is a valid role in this guild
 func (g *Guild) IsRole(roleId string) bool {
 	_, err := g.GetRole(roleId)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 // HasRole
@@ -230,10 +224,7 @@ func (g *Guild) GetChannel(channelId string) (*discordgo.Channel, error) {
 // Determine whether or not a given channelId is a valid channel in this guild
 func (g *Guild) IsChannel(channelId string) bool {
 	_, err := g.GetChannel(channelId)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 // MemberOrRoleInList
@@ -609,7 +600,7 @@ func (g *Guild) RemoveChannelFromIgnored(channelId string) error {
 // Check if a given command is globally disabled
 func (g *Guild) IsGloballyDisabled(trigger string) bool {
 	for _, disabled := range g.Info.GlobalDisabledCommands {
-		if strings.ToLower(disabled) == strings.ToLower(trigger) {
+		if strings.EqualFold(disabled, trigger) {
 			return true
 		}
 	}
