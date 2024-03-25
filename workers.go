@@ -1,55 +1,91 @@
 package framework
 
+// workers.go
+// This package contains the necessary code to schedule reoccurring events
+// Workers can manipulate different parts of the bot and are responsible for
+// Mutes, TempBans, Presence updates, and other required things
+// Commands can also register workers with the manager
+
+// todo clean up the documentation
+
+// WORKERS RUN MULTIPLE TIMES WHILE THE BOT IS RUNNING
+// JOBS ARE THE ACTUAL GOCRON VERSION OF the WORKER
+
 import (
-	"sync"
 	"time"
+
+	"github.com/go-co-op/gocron"
+	tlog "github.com/ubergeek77/tinylog"
 )
 
-// workers.go
-// This file contains everything for adding and managing workers
+var wlog = tlog.NewTaggedLogger("WorkerManager", tlog.NewColor("38;5;111"))
 
-// workerLock
-// A map that stores mutexes for the background workers
-// These will be used to determine when the workers have exited gracefully
-// If a worker is still locked, then it has not exited
-var workerLock = make(map[int]*sync.Mutex)
-
-// workers
-// The list of workers that are to be pre-registered before the bot starts, then all executed in the background
-var workers []func()
-
-// continueLoop
-// This boolean will be changed to false when the bot is trying to shut down
-// All the background workers are looping on this being true, meaning they will stop when it is false
-var continueLoop = true
-
-// AddWorker
-// Given a function that is passed through, append it to the list of worker functions
-func AddWorker(worker func()) {
-	workers = append(workers, worker)
+// WorkerManager is an easy way to manage workers.
+type WorkerManager struct {
+	Scheduler *gocron.Scheduler
+	Workers   map[string]Worker
+	Jobs      []*gocron.Job
+	IsRunning bool
 }
 
-// startWorkers
-// Go through the list of workers than have been added to the list, and execute them all in the background
-func startWorkers() {
-	// Iterate over all the workers
-	for i, worker := range workers {
-		// Create a mutex for this worker
-		workerLock[i] = &sync.Mutex{}
+// Worker
+// Describes a worker.
+type Worker struct {
+	Duration   string
+	WorkerFunc func()
+}
 
-		// Start a goroutine for this worker, which starts it in the background
-		go func(worker func(), i int) {
-			// Lock the worker; this will be used in graceful termination
-			workerLock[i].Lock()
-
-			// Run the worker once per second, forever, until a TERM signal breaks this loop
-			for continueLoop {
-				worker()
-				time.Sleep(time.Second)
-			}
-
-			// The loop has stopped. Unlock the worker
-			workerLock[i].Unlock()
-		}(worker, i)
+func InitializeManager(loc *time.Location) *WorkerManager {
+	wrk := &WorkerManager{
+		Scheduler: gocron.NewScheduler(loc),
+		Workers:   make(map[string]Worker),
+		IsRunning: false,
 	}
+	wrk.Scheduler.TagsUnique()
+	return wrk
+}
+
+// Start
+// Will start all the workers via the scheduler.
+func (m *WorkerManager) Start() {
+	m.Scheduler.StartAsync()
+	m.IsRunning = true
+}
+
+// StopWorkers
+// Will stop all the workers via the scheduler.
+func (m *WorkerManager) StopWorkers() {
+	m.Scheduler.StopBlockingChan()
+	m.IsRunning = false
+}
+
+// AddWorker
+// Adds a worker to the internal worker map.
+func (m *WorkerManager) AddWorker(tag string, worker Worker) {
+	m.Workers[tag] = worker
+}
+
+// AddWorkers
+// registers all the workers to the scheduler.
+func (m *WorkerManager) AddWorkers() {
+	for tag, worker := range m.Workers {
+		job, err := m.Scheduler.Cron(worker.Duration).Tag(tag).Do(worker.WorkerFunc)
+		if err != nil {
+			wlog.Errorf("Unable to register worker %s", tag)
+			wlog.Fatal(err.Error())
+		}
+		m.Jobs = append(m.Jobs, job)
+	}
+}
+
+// RemoveWorker
+// Removes a worker from the scheduler.
+func (m *WorkerManager) RemoveWorker() {
+
+}
+
+// AddWorkerOnce
+// Easy way to add a single job to the scheduler.
+func (m *WorkerManager) AddWorkerOnce() {
+
 }

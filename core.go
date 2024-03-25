@@ -3,9 +3,9 @@ package framework
 import (
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	tlog "github.com/ubergeek77/tinylog"
@@ -65,6 +65,10 @@ var initProvider func() GuildProvider
 // debugMode
 // A boolean that tells the bot to log debug messages
 var debugMode = false
+
+// workerManager
+// The worker manager for the bot
+var workerManager *WorkerManager
 
 // SetInitProvider
 // Sets the init provider
@@ -134,6 +138,8 @@ func Start() {
 		log.Fatalf("You have not specified a Discord bot token!")
 	}
 
+	workerManager = InitializeManager(time.UTC)
+
 	// Use the token to create a new session
 	var err error
 	Session, err = discordgo.New("Bot " + botToken)
@@ -174,7 +180,6 @@ func Start() {
 	log.Infof("Bot logged in as \"" + Session.State.Ready.User.Username + "#" + Session.State.Ready.User.Discriminator + "\"")
 
 	// Start workers
-	startWorkers()
 
 	// Print information about the current bot admins
 	numAdmins := 0
@@ -213,9 +218,6 @@ func Start() {
 
 	log.Info("Received TERM signal, terminating gracefully.")
 
-	// Set the global loop variable to false so all background loops terminate
-	continueLoop = false
-
 	// Make a second sig channel that will respond to user term signal immediately
 	sigInstant := make(chan os.Signal, 1)
 	signal.Notify(sigInstant, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
@@ -223,15 +225,8 @@ func Start() {
 	// Make a goroutine that will wait for all background workers to be unlocked
 	go func() {
 		log.Info("Waiting for workers to exit... (interrupt to kill immediately; not recommended!!!)")
-		for i, lock := range workerLock {
-			// Try locking the worker mutex. This will block if the mutex is already locked
-			// If we are able to lock it, then it means the worker has stopped.
-			lock.Lock()
-			log.Info("Stopped worker " + strconv.Itoa(i))
-
-			lock.Unlock()
-		}
-
+		// Stop all workers
+		workerManager.StopWorkers()
 		log.Info("All routines exited gracefully.")
 
 		// Send our own signal to the instant sig channel
@@ -242,7 +237,7 @@ func Start() {
 	<-sigInstant
 
 	log.Info("Closing the Discord session...")
-	closeErr := Session.Close()
+	closeErr := Session.CloseWithCode(1000)
 	if closeErr != nil {
 		log.Errorf("An error occurred when closing the Discord session: %s", err)
 		return
