@@ -1,4 +1,4 @@
-package framework
+package workers
 
 // workers.go
 // This package contains the necessary code to schedule reoccurring events

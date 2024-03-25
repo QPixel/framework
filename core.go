@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/qpixel/framework/workers"
 	tlog "github.com/ubergeek77/tinylog"
 )
 
@@ -20,7 +21,7 @@ var MessageState = 500
 
 // log
 // The logger for the core bot
-var log = tlog.NewTaggedLogger("BotCore", tlog.NewColor("38;5;111"))
+var log = tlog.NewTaggedLogger("Framework", tlog.NewColor("38;5;111"))
 
 // dlog
 // The logger for discordgo
@@ -54,10 +55,6 @@ var ColorSuccess = 0x55F485
 // The color to use for response embeds reporting failure
 var ColorFailure = 0xF45555
 
-// BotPresence
-// Presence data to send when the bot is logging in
-var botPresence discordgo.GatewayStatusUpdate
-
 // initProvider
 // Stores and allows for the calling of the chosen GuildProvider
 var initProvider func() GuildProvider
@@ -68,18 +65,12 @@ var debugMode = false
 
 // workerManager
 // The worker manager for the bot
-var workerManager *WorkerManager
+var WorkerManager *workers.WorkerManager
 
 // SetInitProvider
 // Sets the init provider
 func SetInitProvider(provider func() GuildProvider) {
 	initProvider = provider
-}
-
-// SetPresence
-// Sets the gateway field for bot presence
-func SetPresence(presence discordgo.GatewayStatusUpdate) {
-	botPresence = presence
 }
 
 // AddAdmin
@@ -138,7 +129,7 @@ func Start() {
 		log.Fatalf("You have not specified a Discord bot token!")
 	}
 
-	workerManager = InitializeManager(time.UTC)
+	WorkerManager = workers.InitializeManager(time.UTC)
 
 	// Use the token to create a new session
 	var err error
@@ -148,24 +139,20 @@ func Start() {
 		log.Fatalf("Failed to create Discord session: %s", err)
 	}
 	if debugMode {
-		Session.LogLevel = discordgo.LogDebug
+		Session.LogLevel = discordgo.LogInformational
 		Session.Debug = true
+	} else {
+		Session.LogLevel = discordgo.LogWarning
 	}
+
+	if os.Getenv("LOG_LEVEL") != "" && os.Getenv("LOG_LEVEL") == "DEBUG" {
+		Session.LogLevel = discordgo.LogDebug
+	}
+
 	// Setup State specific variables
 	Session.State.MaxMessageCount = MessageState
-	Session.LogLevel = discordgo.LogWarning
 	Session.SyncEvents = false
 	Session.Identify.Intents = discordgo.IntentsAllWithoutPrivileged | discordgo.IntentMessageContent
-
-	// Set the bots status
-	Session.Identify.Presence = botPresence
-
-	// Open the session
-	log.Info("Connecting to Discord...")
-	err = Session.Open()
-	if err != nil {
-		log.Fatalf("Failed to connect to Discord: %s", err)
-	}
 
 	// Add the commandHandler to the list of user-defined handlers
 	AddDGOHandler(commandHandler)
@@ -175,6 +162,13 @@ func Start() {
 
 	// Add the handlers to the session
 	addDGoHandlers()
+
+	// Open the session
+	log.Info("Connecting to Discord...")
+	err = Session.Open()
+	if err != nil {
+		log.Fatalf("Failed to connect to Discord: %s", err)
+	}
 
 	// Log that the login succeeded
 	log.Infof("Bot logged in as \"" + Session.State.Ready.User.Username + "#" + Session.State.Ready.User.Discriminator + "\"")
@@ -226,7 +220,7 @@ func Start() {
 	go func() {
 		log.Info("Waiting for workers to exit... (interrupt to kill immediately; not recommended!!!)")
 		// Stop all workers
-		workerManager.StopWorkers()
+		WorkerManager.StopWorkers()
 		log.Info("All routines exited gracefully.")
 
 		// Send our own signal to the instant sig channel
