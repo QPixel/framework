@@ -114,10 +114,17 @@ func (c *ResponseComponents) ReplaceButton(customID string, button discordgo.But
 // Create a response object for a guild, which starts off as an empty Embed which will have fields added to it
 // The response starts with some "auditing" information
 // The embed will be finalized in .Send()
-func NewResponse(ctx *Context, messageComponents bool, ephemeral bool) *Response {
+func NewResponse(ctx *Context, messageComponents bool, ephemeral bool, use_embed ...bool) *Response {
+	var embed *discordgo.MessageEmbed
+	if len(use_embed) == 0 {
+		use_embed = append(use_embed, true)
+	}
+	if use_embed[0] {
+		embed = CreateEmbed(0, "", "", nil)
+	}
 	r := &Response{
 		Ctx:   ctx,
-		Embed: CreateEmbed(0, "", "", nil),
+		Embed: embed,
 		ResponseComponents: &ResponseComponents{
 			Components:        nil,
 			SelectMenuOptions: nil,
@@ -316,21 +323,38 @@ func (r *Response) PrependContent(content string) *Response {
 
 // Send
 // Send a compiled response
-func (r *Response) Send(success bool, title string, description string) {
+func (r *Response) Send(success bool, title, description string) {
+	r.SendComplex(SendComplex{
+		Success:     success,
+		Title:       title,
+		Description: description,
+	})
+}
+
+type SendComplex struct {
+	Success     bool
+	Title       string
+	Description string
+}
+
+// SendComplex
+// SendComplex a compiled response
+func (r *Response) SendComplex(options SendComplex) {
 	// Determine what color to use based on the success state
 	var color int
-	if success {
+	if options.Success {
 		color = ColorSuccess
 	} else {
 		// On failure, also append the command usage
 		r.AppendUsage()
 		color = ColorFailure
 	}
-
-	// Fill out the main embed
-	r.Embed.Title = title
-	r.Embed.Description = description
-	r.Embed.Color = color
+	if r.Embed != nil {
+		// Fill out the main embed
+		r.Embed.Title = options.Title
+		r.Embed.Description = options.Description
+		r.Embed.Color = color
+	}
 
 	// If guild is nil, this is intended to be sent to Bot Admins
 	if r.Ctx.Guild == nil && r.Ctx.Interaction == nil {
@@ -359,101 +383,10 @@ func (r *Response) Send(success bool, title string, description string) {
 	// If this is a interaction (slash command)
 	// Run it as a interaction response and then return early
 	if r.Ctx.Interaction != nil {
-		// Some commands take a while to load
-		// Slash commands expect a response in 3 seconds or the interaction gets invalidated
-		if r.Loading {
-			// Check to see if the command is ephemeral (only shown to the user)
-			if r.Ephemeral {
-				components := SerializeActionRow(r.ResponseComponents.Components)
-				log.Debugf("Sending interaction response with components: %#v", components)
-				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
-					Components: components,
-					Embeds: &[]*discordgo.MessageEmbed{
-						r.Embed,
-					},
-					Content: ToPtr[string](r.Content),
-				})
-				// Just in case the interaction gets removed.
-				if err != nil {
-					if err != nil {
-						SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
-					}
-					if r.Ctx.Guild.Info.ResponseChannelId != "" {
-						_, err = Session.ChannelMessageSendEmbed(r.Ctx.Guild.Info.ResponseChannelId, r.Embed)
-
-					} else {
-						_, err = Session.ChannelMessageSendEmbed(r.Ctx.Message.ChannelID, r.Embed)
-					}
-
-					if err != nil {
-						SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send message", err)
-					}
-				}
-			} else {
-				components := SerializeActionRow(r.ResponseComponents.Components)
-				log.Debugf("Sending interaction response with components: %#v", components)
-				_, err := Session.InteractionResponseEdit(r.Ctx.Interaction, &discordgo.WebhookEdit{
-					Content: ToPtr[string](r.Content),
-					Embeds: &[]*discordgo.MessageEmbed{
-						r.Embed,
-					},
-					Components: components,
-				})
-				// Just in case the interaction gets removed.
-				if err != nil {
-					log.Errorf("Error sending interaction response: %s", err)
-					_, err := Session.ChannelMessageSendEmbed(r.Ctx.Guild.Info.ResponseChannelId, r.Embed)
-					if err != nil {
-						_, _ = Session.ChannelMessageSendEmbed(r.Ctx.Message.ChannelID, r.Embed)
-					}
-				}
-			}
-			r.Loading = false
-			return
-		}
-		// Check to see if the command is ephemeral (only shown to the user)
-		if r.Ephemeral {
-			Session.InteractionRespond(r.Ctx.Interaction, &discordgo.InteractionResponse{
-				// Ephemeral is type 64 don't ask why
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Flags: 1 << 6,
-					Embeds: []*discordgo.MessageEmbed{
-						r.Embed,
-					},
-					Components: *SerializeActionRow(r.ResponseComponents.Components),
-					Content:    r.Content,
-				},
-			})
-			return
-		}
-
-		// Default response for interaction
-		err := Session.InteractionRespond(r.Ctx.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Embeds: []*discordgo.MessageEmbed{
-					r.Embed,
-				},
-				Components: *SerializeActionRow(r.ResponseComponents.Components),
-				Content:    r.Content,
-			},
-		})
-		if err != nil {
-			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
-			if r.Ctx.Guild.Info.ResponseChannelId != "" {
-				_, err = Session.ChannelMessageSendEmbed(r.Ctx.Guild.Info.ResponseChannelId, r.Embed)
-
-			} else {
-				_, err = Session.ChannelMessageSendEmbed(r.Ctx.Message.ChannelID, r.Embed)
-			}
-
-			if err != nil {
-				SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send message", err)
-			}
-		}
+		r.SendInteraction()
 		return
 	}
+
 	// Try sending the response in the configured output channel
 	// If that fails, try sending the response in the current channel
 	// If THAT fails, send an error report
@@ -487,6 +420,90 @@ func (r *Response) Send(success bool, title string, description string) {
 			Components: *SerializeActionRow(r.ResponseComponents.Components),
 			Content:    r.Content,
 		})
+	}
+}
+
+// SendInteraction
+// Send a response to an interaction
+func (r *Response) SendInteraction() {
+	var embeds []*discordgo.MessageEmbed
+
+	if r.Embed != nil {
+		embeds = []*discordgo.MessageEmbed{r.Embed}
+	}
+
+	// Some commands take a while to load
+	// Slash commands expect a response in 3 seconds or the interaction gets invalidated
+	if r.Loading {
+		var err error
+		// Check to see if the command is ephemeral (only shown to the user)
+		components := SerializeActionRow(r.ResponseComponents.Components)
+		webhookEdit := &discordgo.WebhookEdit{
+			Content:    ToPtr(r.Content),
+			Components: components,
+		}
+
+		if embeds != nil {
+			webhookEdit.Embeds = &embeds
+		}
+
+		if r.Ephemeral {
+			_, err = Session.InteractionResponseEdit(r.Ctx.Interaction, webhookEdit)
+		} else {
+			_, err = Session.InteractionResponseEdit(r.Ctx.Interaction, webhookEdit)
+		}
+
+		if err != nil {
+			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
+		}
+
+		r.Loading = false
+		return
+	}
+	// Check to see if the command is ephemeral (only shown to the user)
+	if r.Ephemeral {
+		responseData := &discordgo.InteractionResponseData{
+			Flags:      1 << 6,
+			Components: *SerializeActionRow(r.ResponseComponents.Components),
+			Content:    r.Content,
+		}
+
+		if embeds != nil {
+			responseData.Embeds = embeds
+		}
+
+		err := Session.InteractionRespond(r.Ctx.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: responseData,
+		})
+		if err != nil {
+			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
+		}
+		return
+	}
+
+	// Default response for interaction
+	err := Session.InteractionRespond(r.Ctx.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds:     embeds,
+			Components: *SerializeActionRow(r.ResponseComponents.Components),
+			Content:    r.Content,
+		},
+	})
+
+	if err != nil {
+		SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send interaction messages", err)
+		if r.Ctx.Guild.Info.ResponseChannelId != "" {
+			_, err = Session.ChannelMessageSendEmbed(r.Ctx.Guild.Info.ResponseChannelId, r.Embed)
+
+		} else {
+			_, err = Session.ChannelMessageSendEmbed(r.Ctx.Message.ChannelID, r.Embed)
+		}
+
+		if err != nil {
+			SendErrorReport(r.Ctx.Guild.ID, r.Ctx.Interaction.ChannelID, r.Ctx.Message.Author.ID, "Unable to send message", err)
+		}
 	}
 }
 

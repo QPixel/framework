@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/ubergeek77/tinylog"
 	errors "gitlab.com/tozd/go/errors"
 )
 
@@ -171,6 +172,7 @@ func handleChatApplicationCommand(s *discordgo.Session, i *discordgo.Interaction
 			GuildID:   i.GuildID,
 			Content:   "",
 		},
+		Log: tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), tinylog.NewColor("38;5;111")),
 	})
 }
 
@@ -202,22 +204,27 @@ func handleUserContextCommand(i *discordgo.InteractionCreate) {
 			ChannelID: i.ChannelID,
 			Content:   "",
 		},
+		Log: tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), botContextLoggerColor),
 	})
 }
 
 // handleMessageContextCommand
 // Handles a message context command
 func handleMessageContextCommand(i *discordgo.InteractionCreate) {
-	trigger := i.ApplicationCommandData().Name
+	commandData := i.ApplicationCommandData()
+	trigger := commandData.Name
+	message := commandData.Resolved.Messages[commandData.TargetID]
+
 	log.Debugf("Handling command %s", trigger)
 	command := commands[trigger]
 	log.Debugf("Command %s found %#v", trigger, command)
-	defer handleSlashCommandError(*i.Interaction)
+	// defer handleSlashCommandError(*i.Interaction)
 	command.Handlers["default"](&Context{
 		Guild:       getGuild(i.GuildID),
 		Cmd:         *command.Info,
 		Interaction: i.Interaction,
-		Message:     i.Message,
+		Message:     message,
+		Log:         tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), botContextLoggerColor),
 	})
 }
 
@@ -242,6 +249,7 @@ func handleUserApplicationChatCommand(s *discordgo.Session, i *discordgo.Interac
 			ChannelID: i.ChannelID,
 			Content:   "",
 		},
+		Log: tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), botContextLoggerColor),
 	})
 
 }
@@ -252,6 +260,28 @@ func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreat
 		log.Errorf("No component found for %s", componentName)
 		return
 	}
+	message := &discordgo.Message{
+		Content: "",
+	}
+
+	if i.Message != nil {
+		message = i.Message
+	}
+	if i.Member != nil {
+		message.Member = i.Member
+	}
+	if i.GuildID != "" {
+		message.GuildID = i.GuildID
+	}
+	if i.ChannelID != "" {
+		message.ChannelID = i.ChannelID
+	}
+	if i.User != nil {
+		message.Author = i.User
+	}
+	if i.Member != nil {
+		message.Member = i.Member
+	}
 
 	defer handleSlashCommandError(*i.Interaction)
 	componentHandlers[componentName](&Context{
@@ -259,13 +289,8 @@ func handleMessageComponents(s *discordgo.Session, i *discordgo.InteractionCreat
 		Cmd:         CommandInfo{},
 		Args:        map[string]CommandArg{},
 		Interaction: i.Interaction,
-		Message: &discordgo.Message{
-			Member:    i.Member,
-			Author:    i.Member.User,
-			ChannelID: i.ChannelID,
-			GuildID:   i.GuildID,
-			Content:   "",
-		},
+		Message:     message,
+		Log:         tinylog.NewTaggedLogger(fmt.Sprintf("Component: %s", componentName), botContextLoggerColor),
 	})
 }
 
@@ -294,6 +319,7 @@ func handleAutoComplete(i *discordgo.InteractionCreate) {
 				Cmd:         *command.Info,
 				Args:        *ParseInteractionArgs(i.ApplicationCommandData().Options),
 				Interaction: i.Interaction,
+				Log:         tinylog.NewTaggedLogger(fmt.Sprintf("Handler: %s", commandName), botContextLoggerColor),
 			})
 		}
 	}

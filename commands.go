@@ -10,6 +10,7 @@ import (
 	"github.com/QPixel/orderedmap"
 	"github.com/bwmarrin/discordgo"
 	"github.com/dlclark/regexp2"
+	"github.com/ubergeek77/tinylog"
 )
 
 // commands.go
@@ -61,7 +62,10 @@ type Context struct {
 	Args        Arguments
 	Message     *discordgo.Message
 	Interaction *discordgo.Interaction
+	Log         *tinylog.Logger
 }
+
+var botContextLoggerColor = tinylog.NewColor("38;5;13")
 
 // BotFunction
 // This type defines the functions that are called when commands are triggered
