@@ -10,6 +10,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/dlclark/regexp2"
+	"github.com/ubergeek77/tinylog"
 )
 
 // util.go
@@ -383,6 +384,17 @@ func dgoLog(msgL, caller int, format string, a ...interface{}) {
 	case discordgo.LogDebug:
 		dlog.Debugf("%s:%d:%s() %s", file, line, name, msg)
 	}
+}
+
+// MakeModuleLogger
+// Makes a logger for a module
+func MakeModuleLogger(module string) *tinylog.Logger {
+	cfg := tinylog.NewConfig()
+	if debugMode {
+		cfg.LogLevel = tinylog.DebugLevel
+	}
+	cfg.LogPrefix = tinylog.GenerateTag(fmt.Sprintf("Module: %s", module), botContextLoggerColor, cfg)
+	return tinylog.NewLogger(cfg)
 }
 
 // ToPtr

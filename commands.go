@@ -351,6 +351,12 @@ func AddChatCommand(info *CommandInfo, function BotFunction) {
 		alias = strings.ToLower(alias)
 		commandAliases[alias] = info.Name
 	}
+
+	if _, ok := commands[strings.ToLower(info.Name)]; ok {
+		log.Errorf("Command was already registered %s", info.Name)
+		return
+
+	}
 	// Add the command to the map; command triggers are case-insensitive
 	commands[strings.ToLower(info.Name)] = &command
 }
@@ -369,6 +375,11 @@ func AddContextCommand(info *CommandInfo, function BotFunction) {
 	command.Handlers["default"] = function
 
 	// Add the command to the map; command triggers are case-insensitive
+	if _, ok := commands[strings.ToLower(info.Name)]; ok {
+		log.Errorf("Command was already registered %s", info.Name)
+		return
+	}
+
 	commands[strings.ToLower(info.Name)] = &command
 }
 

@@ -543,7 +543,15 @@ func (r *Response) EditButtonComplex(buttonID string, label string, style discor
 // Edit
 // Edit a response
 func (r *Response) Edit() {
+	// Stupid fix for https://arc.net/l/quote/rawqeoye
+	// Follow up messages have to be ephemeral, even if they are just edits...
+	if r.Ctx.Message.GuildID == "" {
+		log.Errorf("Cannot edit a message in a DM (blame Discord)")
+		return
+	}
+
 	component := SerializeActionRow(r.ResponseComponents.Components)
+
 	log.Debugf("Editing response with components: %#v", component)
 	_, err := Session.ChannelMessageEditComplex(&discordgo.MessageEdit{
 		Channel:    r.Ctx.Interaction.Message.ChannelID,

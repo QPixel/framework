@@ -113,8 +113,8 @@ func SetDebugMode() {
 	debugMode = true
 }
 
-// Start the bot.
-func Start() {
+// Run the bot.
+func Run() {
 	discordgo.Logger = dgoLog
 
 	// Load all the guilds
@@ -141,8 +141,10 @@ func Start() {
 	if debugMode {
 		Session.LogLevel = discordgo.LogInformational
 		Session.Debug = true
+		log.LogLevel = tlog.DebugLevel
 	} else {
 		Session.LogLevel = discordgo.LogWarning
+		log.LogLevel = tlog.WarningLevel
 	}
 
 	if os.Getenv("LOG_LEVEL") != "" && os.Getenv("LOG_LEVEL") == "DEBUG" {
@@ -205,7 +207,7 @@ func Start() {
 
 	// Set up a sigterm channel, so we can detect when the application receives a TERM signal
 	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, syscall.SIGKILL, syscall.SIGQUIT, syscall.SIGABRT)
 
 	// Keep this thread blocked forever, until a TERM signal is received
 	<-sigChannel
@@ -214,7 +216,7 @@ func Start() {
 
 	// Make a second sig channel that will respond to user term signal immediately
 	sigInstant := make(chan os.Signal, 1)
-	signal.Notify(sigInstant, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(sigInstant, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, syscall.SIGKILL, syscall.SIGQUIT, syscall.SIGABRT)
 
 	// Make a goroutine that will wait for all background workers to be unlocked
 	go func() {
@@ -238,4 +240,31 @@ func Start() {
 	}
 
 	log.Info("Session closed.")
+
+}
+
+func DeleteSlashCommands() {
+	var err error
+	Session, err = discordgo.New("Bot " + botToken)
+	if err != nil {
+		log.Fatalf("Failed to create Discord session: %s", err)
+	}
+	if debugMode {
+		Session.LogLevel = discordgo.LogInformational
+		Session.Debug = true
+		log.LogLevel = tlog.DebugLevel
+	} else {
+		Session.LogLevel = discordgo.LogWarning
+		log.LogLevel = tlog.WarningLevel
+	}
+	err = Session.Open()
+	if err != nil {
+		log.Fatalf("Failed to connect to Discord: %s", err)
+	}
+
+	log.Infof("%#v", Session)
+	RemoveAllSlashCommands()
+
+	log.Info("Slash commands deleted.")
+	Session.Close()
 }

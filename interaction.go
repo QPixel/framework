@@ -112,31 +112,6 @@ func handleApplicationCommand(s *discordgo.Session, i *discordgo.InteractionCrea
 	case discordgo.UserApplicationCommand, discordgo.MessageApplicationCommand:
 		handleApplicationContextCommand(i)
 	}
-
-	// if !IsAdmin(i.Member.User.ID) {
-	// 	// Ignore the command if it is globally disabled
-	// 	if g.IsGloballyDisabled(trigger) {
-	// 		ErrorResponse(i.Interaction, "Command is globally disabled", trigger)
-	// 		return
-	// 	}
-
-	// 	// Ignore the command if this channel has blocked the command
-	// 	if g.CommandIsDisabledInChannel(trigger, i.ChannelID) {
-	// 		ErrorResponse(i.Interaction, "Command is disabled in this channel!", trigger)
-	// 		return
-	// 	}
-
-	// 	// Ignore any message if the user is banned from using the bot
-	// 	if !g.MemberOrRoleIsWhitelisted(i.Member.User.ID) || g.MemberOrRoleIsIgnored(i.Member.User.ID) {
-	// 		return
-	// 	}
-
-	// 	// Ignore the message if this channel is not whitelisted, or if it is ignored
-	// 	if !g.ChannelIsWhitelisted(i.ChannelID) || g.ChannelIsIgnored(i.ChannelID) {
-	// 		return
-	// 	}
-	// }
-
 }
 
 // handleChatApplicationCommand
@@ -151,14 +126,13 @@ func handleChatApplicationCommand(s *discordgo.Session, i *discordgo.Interaction
 	g := getGuild(i.GuildID)
 
 	trigger := i.ApplicationCommandData().Name
+
 	log.Debugf("Handling command %s", trigger)
+
 	command := commands[trigger]
+
 	log.Debugf("Command %s found %#v", trigger, command)
-	// if IsAdmin(i.Member.User.ID) || command.Info.Public || g.IsMod(i.Member.User.ID) {
-	// Check if the command is public, or if the current user is a bot moderator
-	// Bot admins supercede both checks
-	// }
-	log.Debugf("%#v", i.Interaction)
+
 	defer handleSlashCommandError(*i.Interaction)
 	command.Handlers["default"](&Context{
 		Guild:       g,
@@ -172,7 +146,7 @@ func handleChatApplicationCommand(s *discordgo.Session, i *discordgo.Interaction
 			GuildID:   i.GuildID,
 			Content:   "",
 		},
-		Log: tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), tinylog.NewColor("38;5;111")),
+		Log: MakeModuleLogger(command.Info.Name),
 	})
 }
 
@@ -194,6 +168,7 @@ func handleUserContextCommand(i *discordgo.InteractionCreate) {
 	log.Debugf("Handling command %s", trigger)
 	command := commands[trigger]
 	log.Debugf("Command %s found %#v", trigger, command)
+
 	defer handleSlashCommandError(*i.Interaction)
 	command.Handlers["default"](&Context{
 		Guild:       getGuild(i.GuildID),
@@ -204,7 +179,7 @@ func handleUserContextCommand(i *discordgo.InteractionCreate) {
 			ChannelID: i.ChannelID,
 			Content:   "",
 		},
-		Log: tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), botContextLoggerColor),
+		Log: MakeModuleLogger(command.Info.Name),
 	})
 }
 
@@ -218,13 +193,14 @@ func handleMessageContextCommand(i *discordgo.InteractionCreate) {
 	log.Debugf("Handling command %s", trigger)
 	command := commands[trigger]
 	log.Debugf("Command %s found %#v", trigger, command)
-	// defer handleSlashCommandError(*i.Interaction)
+
+	defer handleSlashCommandError(*i.Interaction)
 	command.Handlers["default"](&Context{
 		Guild:       getGuild(i.GuildID),
 		Cmd:         *command.Info,
 		Interaction: i.Interaction,
 		Message:     message,
-		Log:         tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), botContextLoggerColor),
+		Log:         MakeModuleLogger(command.Info.Name),
 	})
 }
 
@@ -235,6 +211,7 @@ func handleUserApplicationChatCommand(s *discordgo.Session, i *discordgo.Interac
 	log.Debugf("Handling user command %s", trigger)
 	command := commands[trigger]
 	log.Debugf("Command %s found %#v", trigger, command)
+
 	defer handleSlashCommandError(*i.Interaction)
 	command.Handlers["default"](&Context{
 		Guild:       nil,
@@ -249,7 +226,7 @@ func handleUserApplicationChatCommand(s *discordgo.Session, i *discordgo.Interac
 			ChannelID: i.ChannelID,
 			Content:   "",
 		},
-		Log: tinylog.NewTaggedLogger(fmt.Sprintf("Module: %s", command.Info.Name), botContextLoggerColor),
+		Log: MakeModuleLogger(command.Info.Name),
 	})
 
 }
@@ -353,7 +330,7 @@ func ParseInteractionArgsR(options []*discordgo.ApplicationCommandInteractionDat
 			Value: v.StringValue(),
 		}
 		if v.Options != nil {
-			ParseInteractionArgsR(v.Options, *&args)
+			ParseInteractionArgsR(v.Options, args)
 		}
 	}
 }
@@ -370,6 +347,23 @@ func RemoveGuildSlashCommands(guildID string) {
 	}
 	for _, k := range commands {
 		err = Session.ApplicationCommandDelete(Session.State.User.ID, guildID, k.ID)
+		if err != nil {
+			log.Errorf("error deleting slash command %s %s %s", k.Name, k.ID, err)
+			continue
+		}
+	}
+}
+
+// RemoveAllSlashCommands
+// Removes all slash commands.
+func RemoveAllSlashCommands() {
+	commands, err := Session.ApplicationCommands(Session.State.User.ID, "")
+	if err != nil {
+		log.Errorf("Error getting all slash commands %s", err)
+		return
+	}
+	for _, k := range commands {
+		err = Session.ApplicationCommandDelete(Session.State.User.ID, "", k.ID)
 		if err != nil {
 			log.Errorf("error deleting slash command %s %s %s", k.Name, k.ID, err)
 			continue
